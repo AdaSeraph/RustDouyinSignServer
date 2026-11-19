@@ -645,31 +645,87 @@
     <section id="tab-bench" class="tab-panel">
       <div class="card">
         <div class="card-title">
-          <span>ECS 管线 & Boa JS VM 并发压测</span>
-          <span class="pill pill-info">实时测试吞吐量与延迟</span>
+          <span>ECS 管线 &amp; Boa JS VM 高并发签名压测（1w–10w 火热直播间参考）</span>
+          <span class="pill pill-info">支持 100,000 请求 / 512 并发</span>
         </div>
-        <div class="form-grid" style="max-width: 680px;">
+
+        <div class="btn-row" style="margin-top: 0; margin-bottom: 14px;">
+          <button class="btn btn-sm" onclick="applySignBenchPreset(200, 16)">普通直播间 (200 / 16并发)</button>
+          <button class="btn btn-sm" onclick="applySignBenchPreset(1000, 64)">1w 热门 (1,000 / 64并发)</button>
+          <button class="btn btn-sm" onclick="applySignBenchPreset(5000, 128)">10w 爆火 (5,000 / 128并发)</button>
+          <button class="btn btn-sm" onclick="applySignBenchPreset(10000, 256)">10w+ 峰值 (10,000 / 256并发)</button>
+        </div>
+
+        <div class="form-grid" style="max-width: 920px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));">
           <div class="form-row">
-            <label>总请求次数 (1 - 100)</label>
-            <input type="number" id="benchTotal" value="20" min="1" max="100" />
+            <label>总请求次数 (1 - 100,000)</label>
+            <input type="number" id="benchTotal" value="1000" min="1" max="100000" />
           </div>
           <div class="form-row">
-            <label>并发数 (1 - 16)</label>
-            <input type="number" id="benchConc" value="4" min="1" max="16" />
+            <label>并发数 (1 - 512)</label>
+            <input type="number" id="benchConc" value="64" min="1" max="512" />
+          </div>
+          <div class="form-row">
+            <label>压测模式</label>
+            <select id="benchMode">
+              <option value="server" selected>服务端真并发（推荐，绕过浏览器 6 连接限制）</option>
+              <option value="browser">浏览器 HTTP Fetch（受浏览器同源连接数限制）</option>
+            </select>
           </div>
         </div>
         <div class="btn-row">
           <button class="btn btn-primary" id="benchRunBtn" onclick="runBenchmark()">开始并发压测</button>
+          <button class="btn btn-danger" id="benchStopBtn" onclick="stopBenchmark()" disabled>停止压测</button>
         </div>
         <div class="progress-bar"><div class="progress-fill" id="benchProgress"></div></div>
 
         <div class="result-highlights" style="margin-top: 14px;">
           <div class="hl-box"><div class="k">吞吐量 (QPS)</div><div class="v" id="benchQps">--</div></div>
           <div class="hl-box"><div class="k">成功率</div><div class="v" id="benchRate">--</div></div>
-          <div class="hl-box"><div class="k">最小 / 平均 / 最大延迟</div><div class="v" id="benchLat">--</div></div>
+          <div class="hl-box"><div class="k">延迟 Min / Avg / P95 / P99 / Max</div><div class="v" id="benchLat" style="font-size: 12px;">--</div></div>
           <div class="hl-box"><div class="k">总耗时</div><div class="v" id="benchWall">--</div></div>
         </div>
-        <pre id="benchLog" class="code-box" style="margin-top: 12px;">等待启动压测...</pre>
+        <pre id="benchLog" class="code-box" style="margin-top: 12px;">选择预设或自定义总请求数与并发数后点击「开始并发压测」...</pre>
+      </div>
+
+      <div class="card">
+        <div class="card-title">
+          <span>10w 爆火直播间 Protobuf 推流管线压测（高并发零丢包验证）</span>
+          <span class="pill pill-ok">Gzip + PushFrame + 3-Stage Async Pipeline</span>
+        </div>
+
+        <div class="btn-row" style="margin-top: 0; margin-bottom: 14px;">
+          <button class="btn btn-sm" onclick="applyPipeBenchPreset(10000, 100, 16)">1w 热度 (1w条 / 100每帧 / 16并发)</button>
+          <button class="btn btn-sm" onclick="applyPipeBenchPreset(50000, 200, 32)">5w 热度 (5w条 / 200每帧 / 32并发)</button>
+          <button class="btn btn-sm" onclick="applyPipeBenchPreset(100000, 200, 64)">10w 爆火 (10w条 / 200每帧 / 64并发)</button>
+          <button class="btn btn-sm" onclick="applyPipeBenchPreset(200000, 300, 128)">20w 极限 (20w条 / 300每帧 / 128并发)</button>
+        </div>
+
+        <div class="form-grid" style="max-width: 920px; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));">
+          <div class="form-row">
+            <label>模拟消息总数 (100 - 200,000)</label>
+            <input type="number" id="pipeBenchTotal" value="100000" min="100" max="200000" />
+          </div>
+          <div class="form-row">
+            <label>单帧消息数 (10 - 500)</label>
+            <input type="number" id="pipeBenchBatch" value="200" min="10" max="500" />
+          </div>
+          <div class="form-row">
+            <label>并发推送帧数 (1 - 256)</label>
+            <input type="number" id="pipeBenchConc" value="64" min="1" max="256" />
+          </div>
+        </div>
+        <div class="btn-row">
+          <button class="btn btn-primary" id="pipeBenchBtn" onclick="runLivePipelineBench()">开始 10w 直播间推流管线压测</button>
+        </div>
+
+        <div class="result-highlights" style="margin-top: 14px;">
+          <div class="hl-box"><div class="k">解码吞吐量 (msg/s)</div><div class="v" id="pipeQps" style="color: var(--green);">--</div></div>
+          <div class="hl-box"><div class="k">完整接收 / 总发送（丢包率）</div><div class="v" id="pipeLoss">--</div></div>
+          <div class="hl-box"><div class="k">单帧解码 P50 / P95 / P99</div><div class="v" id="pipeLat" style="font-size: 12px;">--</div></div>
+          <div class="hl-box"><div class="k">总耗时 / 总帧数</div><div class="v" id="pipeWall">--</div></div>
+        </div>
+        <pre id="pipeBenchLog" class="code-box" style="margin-top: 12px;">模拟 10w 粉丝同时刷弹幕/礼物/点赞的 Gzip PushFrame 推流，验证三阶段异步管线的吞吐量与零丢包表现...</pre>
       </div>
     </section>
 
@@ -920,25 +976,113 @@
       }
     }
 
+    let benchAbortController = null;
+
+    function applySignBenchPreset(total, conc) {
+      document.getElementById('benchTotal').value = String(total);
+      document.getElementById('benchConc').value = String(conc);
+    }
+
+    function applyPipeBenchPreset(total, batch, conc) {
+      document.getElementById('pipeBenchTotal').value = String(total);
+      document.getElementById('pipeBenchBatch').value = String(batch);
+      document.getElementById('pipeBenchConc').value = String(conc);
+    }
+
+    function calcPercentile(sortedArr, p) {
+      if (!sortedArr.length) return 0;
+      const idx = Math.min(sortedArr.length - 1, Math.round((sortedArr.length - 1) * p));
+      return sortedArr[idx];
+    }
+
+    function stopBenchmark() {
+      if (benchAbortController) {
+        benchAbortController.abort();
+        benchAbortController = null;
+      }
+    }
+
     async function runBenchmark() {
-      const total = Math.min(100, Math.max(1, parseInt(document.getElementById('benchTotal').value) || 10));
-      const conc = Math.min(16, Math.max(1, parseInt(document.getElementById('benchConc').value) || 2));
+      const total = Math.min(100000, Math.max(1, parseInt(document.getElementById('benchTotal').value) || 1000));
+      const conc = Math.min(512, Math.max(1, parseInt(document.getElementById('benchConc').value) || 64));
+      const mode = document.getElementById('benchMode').value;
       const btn = document.getElementById('benchRunBtn');
+      const stopBtn = document.getElementById('benchStopBtn');
       const bar = document.getElementById('benchProgress');
       const logBox = document.getElementById('benchLog');
+
+      benchAbortController = new AbortController();
+      const signal = benchAbortController.signal;
+
       btn.disabled = true;
+      stopBtn.disabled = false;
       btn.textContent = '压测运行中...';
       bar.style.width = '0%';
-      logBox.textContent = `开始执行 ${total} 次请求（并发 ${conc}）...\n`;
 
       const basePayload = getDouyinPayload();
-      let completed = 0, success = 0;
+
+      if (mode === 'server') {
+        logBox.textContent = `[服务端真并发模式] 正在向 ECS 管线派发 ${total} 次签名请求（并发 ${conc}，无浏览器 6 连接限制）...\n`;
+        bar.style.width = '35%';
+        try {
+          const resp = await fetch('/api/bench/sign', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            signal,
+            body: JSON.stringify({
+              total,
+              concurrency: conc,
+              api_key: basePayload.ApiKey,
+              user_unique_id: basePayload.UserUniqueId
+            })
+          });
+          const json = await resp.json();
+          if (json.Code === 0 && json.Data) {
+            const d = json.Data;
+            bar.style.width = '100%';
+            document.getElementById('benchQps').textContent = `${d.qps.toFixed(2)} req/s`;
+            document.getElementById('benchRate').textContent = `${d.success}/${d.total} (${((d.success / d.total) * 100).toFixed(2)}%)`;
+            document.getElementById('benchLat').textContent = `${d.min_ms.toFixed(1)} / ${d.avg_ms.toFixed(1)} / ${d.p95_ms.toFixed(1)} / ${d.p99_ms.toFixed(1)} / ${d.max_ms.toFixed(1)} ms`;
+            document.getElementById('benchWall').textContent = `${d.wall_ms.toFixed(0)} ms`;
+            logBox.textContent += `压测完成！\n` +
+              `总请求: ${d.total} | 并发: ${d.concurrency} | 成功: ${d.success} | 失败: ${d.failed}\n` +
+              `吞吐量: ${d.qps.toFixed(2)} req/s | 总耗时: ${d.wall_ms.toFixed(1)} ms\n` +
+              `延迟分布: Min=${d.min_ms.toFixed(2)}ms | Avg=${d.avg_ms.toFixed(2)}ms | P50=${d.p50_ms.toFixed(2)}ms | P95=${d.p95_ms.toFixed(2)}ms | P99=${d.p99_ms.toFixed(2)}ms | Max=${d.max_ms.toFixed(2)}ms\n`;
+          } else {
+            logBox.textContent += `压测失败: ${json.Msg || JSON.stringify(json)}\n`;
+          }
+        } catch (err) {
+          logBox.textContent += err.name === 'AbortError' ? '压测已手动停止。\n' : `压测异常: ${err}\n`;
+        } finally {
+          benchAbortController = null;
+          btn.disabled = false;
+          stopBtn.disabled = true;
+          btn.textContent = '开始并发压测';
+          refreshSnapshot();
+        }
+        return;
+      }
+
+      // Browser Fetch mode (with throttled UI updates so 10k+ requests never freeze the tab)
+      logBox.textContent = `[浏览器 HTTP Fetch 模式] 开始执行 ${total} 次请求（并发 ${conc}）...\n`;
+      let completed = 0, success = 0, failed = 0;
       const latencies = [];
+      const recentLines = [];
       const wallStart = performance.now();
       let nextIdx = 0;
 
+      const uiTimer = setInterval(() => {
+        bar.style.width = ((completed / total) * 100).toFixed(1) + '%';
+        const elapsed = Math.max(0.001, (performance.now() - wallStart) / 1000);
+        document.getElementById('benchQps').textContent = `${(completed / elapsed).toFixed(1)} req/s`;
+        document.getElementById('benchRate').textContent = `${success}/${completed} (${completed ? ((success / completed) * 100).toFixed(1) : '0.0'}%)`;
+        if (recentLines.length > 0) {
+          logBox.textContent = `[进度 ${completed}/${total} | 成功 ${success} | 失败 ${failed}]\n` + recentLines.join('\n');
+        }
+      }, 120);
+
       async function worker() {
-        while (true) {
+        while (!signal.aborted) {
           const i = nextIdx++;
           if (i >= total) break;
           const payload = { ...basePayload, RoomId: String(7415791943831046900n + BigInt(i)) };
@@ -947,36 +1091,95 @@
             const resp = await fetch('/Douyin/SignWss', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
+              signal,
               body: JSON.stringify(payload)
             });
             const json = await resp.json();
             const dt = performance.now() - t0;
             latencies.push(dt);
-            if (json.Code === 0) success++;
-            logBox.textContent += `#${i + 1} | Code=${json.Code} | Sig=${json.Data?.Signature || '-'} | ${dt.toFixed(1)} ms\n`;
+            if (json.Code === 0) {
+              success++;
+            } else {
+              failed++;
+            }
+            if (json.Code !== 0 || i < 20 || (i + 1) % Math.max(1, Math.floor(total / 40)) === 0 || i === total - 1) {
+              recentLines.push(`#${i + 1} | Code=${json.Code} | Sig=${json.Data?.Signature || '-'} | ${dt.toFixed(1)} ms`);
+              if (recentLines.length > 80) recentLines.shift();
+            }
           } catch (e) {
-            logBox.textContent += `#${i + 1} | ERROR: ${e}\n`;
+            if (e.name === 'AbortError') break;
+            failed++;
+            recentLines.push(`#${i + 1} | ERROR: ${e}`);
+            if (recentLines.length > 80) recentLines.shift();
           }
           completed++;
-          bar.style.width = ((completed / total) * 100).toFixed(1) + '%';
         }
       }
 
       await Promise.all(Array.from({ length: conc }, () => worker()));
+      clearInterval(uiTimer);
+
       const wallMs = performance.now() - wallStart;
-      const qps = (total / (wallMs / 1000)).toFixed(2);
-      const min = latencies.length ? Math.min(...latencies).toFixed(1) : '0';
-      const max = latencies.length ? Math.max(...latencies).toFixed(1) : '0';
+      const qps = (completed / Math.max(0.001, wallMs / 1000)).toFixed(2);
+      latencies.sort((a, b) => a - b);
+      const min = latencies.length ? latencies[0].toFixed(1) : '0';
+      const max = latencies.length ? latencies[latencies.length - 1].toFixed(1) : '0';
       const avg = latencies.length ? (latencies.reduce((a, b) => a + b, 0) / latencies.length).toFixed(1) : '0';
+      const p95 = latencies.length ? calcPercentile(latencies, 0.95).toFixed(1) : '0';
+      const p99 = latencies.length ? calcPercentile(latencies, 0.99).toFixed(1) : '0';
 
+      bar.style.width = ((completed / total) * 100).toFixed(1) + '%';
       document.getElementById('benchQps').textContent = `${qps} req/s`;
-      document.getElementById('benchRate').textContent = `${success}/${total} (${((success / total) * 100).toFixed(1)}%)`;
-      document.getElementById('benchLat').textContent = `${min} / ${avg} / ${max} ms`;
+      document.getElementById('benchRate').textContent = `${success}/${completed} (${completed ? ((success / completed) * 100).toFixed(2) : '0'}%)`;
+      document.getElementById('benchLat').textContent = `${min} / ${avg} / ${p95} / ${p99} / ${max} ms`;
       document.getElementById('benchWall').textContent = `${wallMs.toFixed(0)} ms`;
+      logBox.textContent = `${signal.aborted ? '[已手动停止] ' : '[压测完成] '}完成 ${completed}/${total} | 成功 ${success} | 失败 ${failed} | QPS=${qps}\n` + recentLines.join('\n');
 
+      benchAbortController = null;
       btn.disabled = false;
+      stopBtn.disabled = true;
       btn.textContent = '开始并发压测';
       refreshSnapshot();
+    }
+
+    async function runLivePipelineBench() {
+      const total_messages = Math.min(200000, Math.max(100, parseInt(document.getElementById('pipeBenchTotal').value) || 100000));
+      const batch_size = Math.min(500, Math.max(10, parseInt(document.getElementById('pipeBenchBatch').value) || 200));
+      const concurrency = Math.min(256, Math.max(1, parseInt(document.getElementById('pipeBenchConc').value) || 64));
+      const btn = document.getElementById('pipeBenchBtn');
+      const logBox = document.getElementById('pipeBenchLog');
+
+      btn.disabled = true;
+      btn.textContent = '10w 推流管线压测中...';
+      logBox.textContent = `正在模拟 ${total_messages.toLocaleString()} 条混合弹幕/礼物/点赞消息（每帧 ${batch_size} 条，并发 ${concurrency} 帧）...\n`;
+
+      try {
+        const resp = await fetch('/api/bench/live-pipeline', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ total_messages, batch_size, concurrency })
+        });
+        const json = await resp.json();
+        if (json.Code === 0 && json.Data) {
+          const d = json.Data;
+          document.getElementById('pipeQps').textContent = `${Math.round(d.throughput_msg_per_sec).toLocaleString()} msg/s`;
+          document.getElementById('pipeLoss').textContent = `${d.decoded_messages.toLocaleString()} / ${d.total_messages.toLocaleString()} (丢包 ${d.loss_rate_pct.toFixed(3)}%)`;
+          document.getElementById('pipeLat').textContent = `${d.p50_frame_ms.toFixed(2)} / ${d.p95_frame_ms.toFixed(2)} / ${d.p99_frame_ms.toFixed(2)} ms`;
+          document.getElementById('pipeWall').textContent = `${d.wall_ms.toFixed(1)} ms (${d.frames_count} 帧)`;
+          logBox.textContent += `压测完成！\n` +
+            `总发送消息: ${d.total_messages.toLocaleString()} 条 (${d.frames_count} 个 Gzip PushFrame，每帧 ${d.batch_size} 条)\n` +
+            `完整解码并送达 SSE 端: ${d.decoded_messages.toLocaleString()} 条 | 丢弃: ${d.dropped_messages} 条 | 丢包率: ${d.loss_rate_pct.toFixed(4)}%\n` +
+            `管线吞吐量: ${Math.round(d.throughput_msg_per_sec).toLocaleString()} msg/s | 总耗时: ${d.wall_ms.toFixed(2)} ms\n` +
+            `单帧解压+解码耗时: P50=${d.p50_frame_ms.toFixed(2)}ms | P95=${d.p95_frame_ms.toFixed(2)}ms | P99=${d.p99_frame_ms.toFixed(2)}ms\n`;
+        } else {
+          logBox.textContent += `压测失败: ${json.Msg || JSON.stringify(json)}\n`;
+        }
+      } catch (err) {
+        logBox.textContent += `请求异常: ${err}\n`;
+      } finally {
+        btn.disabled = false;
+        btn.textContent = '开始 10w 直播间推流管线压测';
+      }
     }
 
     async function sendKwaiReq() {
