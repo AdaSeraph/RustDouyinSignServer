@@ -36,7 +36,7 @@ jobs:
           if [ "${{ runner.os }}" = "Windows" ]; then 7z a $name.zip $name; else tar czf $name.tar.gz $name; fi
       - uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.target }}
+          name: bin-${{ matrix.target }}
           path: dist/*.*z*
 
   release:
@@ -47,6 +47,7 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           path: dist
+          pattern: bin-*
           merge-multiple: true
       - uses: softprops/action-gh-release@v2
         with:
@@ -76,6 +77,8 @@ jobs:
             type=semver,pattern={{version}}
             type=raw,value=latest
       - uses: docker/build-push-action@v6
+        env:
+          DOCKER_BUILD_RECORD_UPLOAD: false
         with:
           context: .
           push: true
