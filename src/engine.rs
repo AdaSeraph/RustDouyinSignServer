@@ -94,11 +94,23 @@ pub struct JsSignEngine {
     engine_name: String,
 }
 
+const EMBEDDED_SCRIPT: &str = include_str!("../scripts/webmssdk.vm.js");
+
 impl JsSignEngine {
     pub fn new(script_path: impl AsRef<Path>, worker_count: usize) -> Result<Self, String> {
         let script_path: PathBuf = script_path.as_ref().to_path_buf();
-        let script_content = std::fs::read_to_string(&script_path)
-            .map_err(|e| format!("Failed to read JS script '{}': {e}", script_path.display()))?;
+        // Prefer an external script (allows hot-replacing), fall back to the embedded copy
+        // so the release binary can run standalone.
+        let script_content = match std::fs::read_to_string(&script_path) {
+            Ok(s) => s,
+            Err(e) => {
+                tracing::warn!(
+                    "JS script '{}' not readable ({e}); using embedded webmssdk.vm.js",
+                    script_path.display()
+                );
+                EMBEDDED_SCRIPT.to_string()
+            }
+        };
 
         let worker_count = worker_count.max(1);
         let (tx, rx) = std::sync::mpsc::channel::<SignJob>();

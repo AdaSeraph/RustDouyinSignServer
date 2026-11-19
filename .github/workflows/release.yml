@@ -15,29 +15,38 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { os: windows-latest, target: x86_64-pc-windows-msvc, ext: .exe }
-          - { os: ubuntu-latest, target: x86_64-unknown-linux-gnu, ext: "" }
-          - { os: macos-latest, target: aarch64-apple-darwin, ext: "" }
+          - { os: windows-latest, target: x86_64-pc-windows-msvc, short: windows-x64, ext: .exe }
+          - { os: windows-latest, target: aarch64-pc-windows-msvc, short: windows-arm64, ext: .exe }
+          - { os: ubuntu-latest, target: x86_64-unknown-linux-musl, short: linux-x64, ext: "", musl: true }
+          - { os: ubuntu-24.04-arm, target: aarch64-unknown-linux-musl, short: linux-arm64, ext: "", musl: true }
+          - { os: macos-latest, target: x86_64-apple-darwin, short: macos-x64, ext: "" }
+          - { os: macos-latest, target: aarch64-apple-darwin, short: macos-arm64, ext: "" }
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
+      - if: matrix.musl
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
       - run: cargo build --release --target ${{ matrix.target }}
       - name: Package
         shell: bash
         run: |
-          name=douyin-sign-server-rust-${{ github.ref_name }}-${{ matrix.target }}
+          bin=douyin-sign-server-rust
+          name=$bin-${{ github.ref_name }}-${{ matrix.short }}
           mkdir -p dist/$name
-          cp target/${{ matrix.target }}/release/douyin-sign-server-rust${{ matrix.ext }} dist/$name/
+          cp target/${{ matrix.target }}/release/$bin${{ matrix.ext }} dist/$name/
           cp -r scripts static config.example.toml LICENSE README.md dist/$name/
+          # standalone single-file executable (JS script and Web GUI are embedded)
+          cp target/${{ matrix.target }}/release/$bin${{ matrix.ext }} dist/$bin-${{ matrix.short }}${{ matrix.ext }}
           cd dist
           if [ "${{ runner.os }}" = "Windows" ]; then 7z a $name.zip $name; else tar czf $name.tar.gz $name; fi
+          rm -rf $name
       - uses: actions/upload-artifact@v4
         with:
           name: bin-${{ matrix.target }}
-          path: dist/*.*z*
+          path: dist/*
 
   release:
     needs: build
