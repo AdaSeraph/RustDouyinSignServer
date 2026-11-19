@@ -1,0 +1,1322 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DouyinSignServerRust — ECS 签名服务器控制台</title>
+  <style>
+    :root {
+      --bg: #0b1120;
+      --bg-card: #111a2e;
+      --bg-input: #0f172a;
+      --border: #1e293b;
+      --border-hi: #334155;
+      --text: #e2e8f0;
+      --muted: #94a3b8;
+      --accent: #38bdf8;
+      --accent-2: #818cf8;
+      --green: #34d399;
+      --red: #f87171;
+      --amber: #fbbf24;
+      --radius: 12px;
+      --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif;
+      background: radial-gradient(circle at 15% 10%, rgba(56, 189, 248, 0.08), transparent 40%),
+                  radial-gradient(circle at 85% 20%, rgba(129, 140, 248, 0.08), transparent 40%),
+                  var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      line-height: 1.5;
+    }
+
+    .container {
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 20px 24px 48px;
+    }
+
+    .edu-banner {
+      background: linear-gradient(90deg, rgba(251, 191, 36, 0.14), rgba(56, 189, 248, 0.10));
+      border: 1px solid rgba(251, 191, 36, 0.35);
+      color: #fde68a;
+      padding: 10px 16px;
+      border-radius: 10px;
+      font-size: 13px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 18px;
+    }
+
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 16px;
+      margin-bottom: 20px;
+    }
+
+    .brand h1 {
+      font-size: 24px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .brand h1 span.badge {
+      font-size: 12px;
+      font-weight: 600;
+      background: rgba(56, 189, 248, 0.15);
+      color: var(--accent);
+      border: 1px solid rgba(56, 189, 248, 0.35);
+      padding: 2px 9px;
+      border-radius: 999px;
+    }
+    .brand p {
+      color: var(--muted);
+      font-size: 13px;
+      margin-top: 4px;
+    }
+
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 6px 12px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 600;
+      background: rgba(52, 211, 153, 0.12);
+      border: 1px solid rgba(52, 211, 153, 0.35);
+      color: var(--green);
+    }
+    .status-pill.offline {
+      background: rgba(248, 113, 113, 0.12);
+      border-color: rgba(248, 113, 113, 0.35);
+      color: var(--red);
+    }
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: currentColor;
+      box-shadow: 0 0 8px currentColor;
+    }
+
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 14px;
+      margin-bottom: 20px;
+    }
+
+    .kpi-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px 18px;
+    }
+    .kpi-label {
+      color: var(--muted);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .kpi-value {
+      font-size: 24px;
+      font-weight: 700;
+      margin-top: 6px;
+      font-family: var(--mono);
+    }
+    .kpi-sub {
+      font-size: 12px;
+      color: var(--muted);
+      margin-top: 4px;
+    }
+
+    .tabs {
+      display: flex;
+      gap: 8px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 20px;
+      overflow-x: auto;
+      padding-bottom: 2px;
+    }
+    .tab-btn {
+      background: transparent;
+      border: none;
+      color: var(--muted);
+      padding: 10px 16px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      transition: all 0.15s ease;
+      white-space: nowrap;
+    }
+    .tab-btn:hover { color: var(--text); }
+    .tab-btn.active {
+      color: var(--accent);
+      border-bottom-color: var(--accent);
+    }
+
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1.05fr 0.95fr;
+      gap: 18px;
+    }
+    @media (max-width: 960px) {
+      .grid-2 { grid-template-columns: 1fr; }
+    }
+
+    .card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px;
+      margin-bottom: 18px;
+    }
+    .card-title {
+      font-size: 16px;
+      font-weight: 600;
+      margin-bottom: 14px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .form-row {
+      margin-bottom: 12px;
+    }
+    .form-row label {
+      display: block;
+      font-size: 12px;
+      color: var(--muted);
+      margin-bottom: 5px;
+      font-weight: 500;
+    }
+    .form-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+    @media (max-width: 640px) {
+      .form-grid { grid-template-columns: 1fr; }
+    }
+
+    input[type="text"], input[type="number"], select, textarea {
+      width: 100%;
+      background: var(--bg-input);
+      border: 1px solid var(--border-hi);
+      color: var(--text);
+      padding: 9px 12px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-family: var(--mono);
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    input:focus, select:focus, textarea:focus {
+      border-color: var(--accent);
+    }
+
+    .btn-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 14px;
+    }
+    button.btn {
+      padding: 9px 16px;
+      border-radius: 8px;
+      border: 1px solid var(--border-hi);
+      background: #1e293b;
+      color: var(--text);
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    button.btn:hover { background: #334155; }
+    button.btn-primary {
+      background: linear-gradient(135deg, #0284c7, #4f46e5);
+      border-color: transparent;
+      color: #fff;
+    }
+    button.btn-primary:hover { filter: brightness(1.1); }
+    button.btn-danger {
+      background: rgba(248, 113, 113, 0.14);
+      border-color: rgba(248, 113, 113, 0.35);
+      color: var(--red);
+    }
+    button.btn-danger:hover { background: rgba(248, 113, 113, 0.25); }
+    button.btn-sm {
+      padding: 5px 10px;
+      font-size: 12px;
+    }
+
+    .code-box {
+      background: #070d19;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px 14px;
+      font-family: var(--mono);
+      font-size: 12px;
+      overflow-x: auto;
+      white-space: pre-wrap;
+      word-break: break-all;
+      color: #cbd5e1;
+      max-height: 360px;
+    }
+
+    .pill {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 600;
+      font-family: var(--mono);
+    }
+    .pill-ok { background: rgba(52, 211, 153, 0.15); color: var(--green); border: 1px solid rgba(52, 211, 153, 0.35); }
+    .pill-err { background: rgba(248, 113, 113, 0.15); color: var(--red); border: 1px solid rgba(248, 113, 113, 0.35); }
+    .pill-info { background: rgba(56, 189, 248, 0.15); color: var(--accent); border: 1px solid rgba(56, 189, 248, 0.35); }
+
+    .result-highlights {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+    .hl-box {
+      background: var(--bg-input);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 12px;
+    }
+    .hl-box .k { font-size: 11px; color: var(--muted); }
+    .hl-box .v { font-size: 14px; font-weight: 700; font-family: var(--mono); margin-top: 3px; word-break: break-all; }
+
+    .pipeline-list {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 12px;
+    }
+    .stage-card {
+      background: var(--bg-input);
+      border: 1px solid var(--border-hi);
+      border-left: 3px solid var(--accent);
+      border-radius: 8px;
+      padding: 12px 14px;
+    }
+    .stage-card .stage-head {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-family: var(--mono);
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--accent);
+    }
+    .stage-card .stage-role {
+      font-size: 12px;
+      color: var(--text);
+      margin-top: 6px;
+    }
+    .stage-card .stage-comp {
+      font-size: 11px;
+      color: var(--muted);
+      font-family: var(--mono);
+      margin-top: 6px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12.5px;
+    }
+    th, td {
+      text-align: left;
+      padding: 9px 10px;
+      border-bottom: 1px solid var(--border);
+    }
+    th {
+      color: var(--muted);
+      font-weight: 600;
+      font-size: 11.5px;
+      text-transform: uppercase;
+    }
+    td.mono { font-family: var(--mono); }
+
+    .progress-bar {
+      width: 100%;
+      height: 10px;
+      background: var(--bg-input);
+      border-radius: 999px;
+      overflow: hidden;
+      border: 1px solid var(--border-hi);
+      margin: 12px 0;
+    }
+    .progress-fill {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, var(--accent), var(--accent-2));
+      transition: width 0.15s ease;
+    }
+
+    .key-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 12px;
+      background: var(--bg-input);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      margin-bottom: 8px;
+      font-family: var(--mono);
+      font-size: 12px;
+      word-break: break-all;
+    }
+
+    footer {
+      margin-top: 32px;
+      text-align: center;
+      color: var(--muted);
+      font-size: 12px;
+      border-top: 1px solid var(--border);
+      padding-top: 16px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="edu-banner">
+      <div><strong>学习声明 (Educational Purpose Only)</strong>：本项目基于 MIT 协议开源，仅用于学习 Rust 语言、<code>bevy_ecs</code> 架构与高性能 Web 服务设计，严禁用于任何商业或违反平台规则的用途。</div>
+      <div id="engineBadge" style="font-family: var(--mono); font-size: 12px;">Engine: Loading...</div>
+    </div>
+
+    <header>
+      <div class="brand">
+        <h1>
+          DouyinSignServerRust
+          <span class="badge">Rust 2024 + bevy_ecs</span>
+        </h1>
+        <p>由原 C# DouyinSignServer 迁移重构的现代 Rust + ECS 架构信令签名服务器与可视化测试控制台</p>
+      </div>
+      <div class="header-actions">
+        <label style="font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 6px; cursor: pointer;">
+          <input type="checkbox" id="autoRefresh" checked /> 自动刷新 (2s)
+        </label>
+        <button class="btn btn-sm" onclick="refreshSnapshot()">立即刷新</button>
+        <div id="statusPill" class="status-pill">
+          <span class="dot"></span>
+          <span id="statusText">连接中...</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- KPI Cards -->
+    <div class="kpi-grid">
+      <div class="kpi-card">
+        <div class="kpi-label">运行时间 / ECS Ticks</div>
+        <div class="kpi-value" id="kpiUptime">--</div>
+        <div class="kpi-sub" id="kpiTicks">Ticks: -- | Active Entities: --</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">总请求数 (Total)</div>
+        <div class="kpi-value" id="kpiTotal">0</div>
+        <div class="kpi-sub" id="kpiBreakdown">成功 0 / 失败 0</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">平均签名耗时</div>
+        <div class="kpi-value" id="kpiLatency">0.00 ms</div>
+        <div class="kpi-sub">常驻 Boa JS VM 池（零重复解析）</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">活跃 API Keys / Workers</div>
+        <div class="kpi-value" id="kpiKeysWorkers">--</div>
+        <div class="kpi-sub" id="kpiArch">bevy_ecs 0.15</div>
+      </div>
+    </div>
+
+    <!-- Navigation Tabs -->
+    <div class="tabs">
+      <button class="tab-btn active" data-tab="douyin">抖音 WSS 签名测试</button>
+      <button class="tab-btn" data-tab="live">直播间消息反馈 (Protobuf)</button>
+      <button class="tab-btn" data-tab="bench">并发压测工具</button>
+      <button class="tab-btn" data-tab="kwai">快手 UID 转 EID</button>
+      <button class="tab-btn" data-tab="ecs">ECS 架构实时监控</button>
+      <button class="tab-btn" data-tab="logs">实时请求日志</button>
+    </div>
+
+    <!-- Tab 1: Douyin SignWss -->
+    <section id="tab-douyin" class="tab-panel active">
+      <div class="grid-2">
+        <div class="card">
+          <div class="card-title">
+            <span>POST /Douyin/SignWss 请求参数</span>
+            <span class="pill pill-info">兼容原 C# PascalCase</span>
+          </div>
+
+          <div class="form-row">
+            <label>快捷选择已注册 API Key（或直接在下方手动输入）</label>
+            <select id="dyKeySelect" onchange="if(this.value) { document.getElementById('dyApiKey').value = this.value; updateSnippets(); }">
+              <option value="">-- 选择活跃 API Key --</option>
+            </select>
+          </div>
+
+          <div class="form-row">
+            <label>ApiKey *</label>
+            <input type="text" id="dyApiKey" value="demo-apikey-learning-only" oninput="updateSnippets()" />
+          </div>
+
+          <div class="form-grid">
+            <div class="form-row">
+              <label>RoomId *</label>
+              <input type="text" id="dyRoomId" value="7415791943831046921" oninput="updateSnippets()" />
+            </div>
+            <div class="form-row">
+              <label>UserUniqueId *</label>
+              <input type="text" id="dyUserUniqueId" value="7410618736569206322" oninput="updateSnippets()" />
+            </div>
+          </div>
+
+          <div class="form-grid">
+            <div class="form-row">
+              <label>BrowserName (可选，默认 Mozilla)</label>
+              <input type="text" id="dyBrowserName" value="Mozilla" oninput="updateSnippets()" />
+            </div>
+            <div class="form-row">
+              <label>LiveUrl (可选)</label>
+              <input type="text" id="dyLiveUrl" placeholder="https://live.douyin.com/..." oninput="updateSnippets()" />
+            </div>
+          </div>
+
+          <div class="form-row">
+            <label>BrowserVersion (可选)</label>
+            <input type="text" id="dyBrowserVersion" value="5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36" oninput="updateSnippets()" />
+          </div>
+
+          <div class="btn-row">
+            <button class="btn btn-primary" onclick="sendDouyinSign()">发送签名请求</button>
+            <button class="btn" onclick="fillRandomDouyin()">随机生成测试 ID</button>
+            <button class="btn" onclick="fillSampleDouyin()">恢复默认示例</button>
+            <button class="btn" onclick="testInvalidKey()">测试无效 Key 拦截</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">
+            <span>签名响应结果</span>
+            <span id="dyStatusBadge" class="pill pill-info">等待测试</span>
+          </div>
+
+          <div class="result-highlights">
+            <div class="hl-box">
+              <div class="k">X-Bogus Signature</div>
+              <div class="v" id="dyOutSig" style="color: var(--green);">--</div>
+            </div>
+            <div class="hl-box">
+              <div class="k">端到端耗时</div>
+              <div class="v" id="dyOutLatency">--</div>
+            </div>
+            <div class="hl-box">
+              <div class="k">X-MS-STUB (MD5)</div>
+              <div class="v" id="dyOutMd5" style="font-size: 11px;">--</div>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <label style="display:flex; justify-content:space-between; align-items:center;">
+              <span>生成的 WSS 地址 (WssUrl)</span>
+              <button class="btn btn-sm" onclick="copyText(document.getElementById('dyOutWss').value, this)">复制 WSS</button>
+            </label>
+            <textarea id="dyOutWss" rows="4" readonly placeholder="点击“发送签名请求”后显示完整 WSS URL..."></textarea>
+          </div>
+
+          <div class="form-row">
+            <label style="display:flex; justify-content:space-between; align-items:center;">
+              <span>原始 JSON 响应</span>
+              <button class="btn btn-sm" onclick="copyText(document.getElementById('dyOutJson').textContent, this)">复制 JSON</button>
+            </label>
+            <pre id="dyOutJson" class="code-box">{ "hint": "点击左侧按钮开始测试 POST /Douyin/SignWss" }</pre>
+          </div>
+        </div>
+      </div>
+
+      <!-- Code Snippet Generator -->
+      <div class="card">
+        <div class="card-title">
+          <span>快捷调用代码生成</span>
+          <div style="display:flex; gap:6px;">
+            <button class="btn btn-sm" onclick="setSnippetMode('curl')">cURL</button>
+            <button class="btn btn-sm" onclick="setSnippetMode('powershell')">PowerShell</button>
+            <button class="btn btn-sm" onclick="setSnippetMode('fetch')">JS Fetch</button>
+            <button class="btn btn-sm" onclick="copyText(document.getElementById('snippetBox').textContent, this)">复制代码</button>
+          </div>
+        </div>
+        <pre id="snippetBox" class="code-box"></pre>
+      </div>
+    </section>
+
+    <!-- Tab 2: Live Room Protobuf Stream -->
+    <section id="tab-live" class="tab-panel">
+      <div class="card">
+        <div class="card-title">
+          <span>抖音直播间地址 -> ECS 签名 -> WebSocket -> Protobuf 实时消息反馈</span>
+          <span id="liveConnBadge" class="pill pill-info">未连接</span>
+        </div>
+
+        <div class="form-grid">
+          <div class="form-row">
+            <label>抖音直播间地址或房间号 (web_rid) *</label>
+            <input type="text" id="liveUrlInput" placeholder="例如：https://live.douyin.com/80017709309 或 80017709309" />
+          </div>
+          <div class="form-row">
+            <label>ApiKey *</label>
+            <input type="text" id="liveApiKeyInput" value="demo-apikey-learning-only" />
+          </div>
+        </div>
+
+        <div class="form-grid">
+          <div class="form-row">
+            <label>手动指定 RoomId（可选，自动解析失败时填写）</label>
+            <input type="text" id="liveRoomIdOverride" placeholder="留空则自动从直播地址解析" />
+          </div>
+          <div class="form-row">
+            <label>手动指定 ttwid Cookie（可选）</label>
+            <input type="text" id="liveTtwidOverride" placeholder="留空则自动请求 live.douyin.com 获取" />
+          </div>
+        </div>
+
+        <div class="btn-row">
+          <button class="btn btn-primary" id="liveConnectBtn" onclick="startLiveStream()">连接并监听实时消息</button>
+          <button class="btn btn-danger" id="liveStopBtn" onclick="stopLiveStream()" disabled>断开连接</button>
+          <button class="btn" onclick="resolveLiveRoomOnly()">仅解析房间信息</button>
+          <button class="btn" onclick="runProtoSelfTest()">Protobuf 编解码自测</button>
+          <button class="btn" onclick="clearLiveFeed()">清空消息</button>
+        </div>
+
+        <div class="result-highlights" style="margin-top: 16px;">
+          <div class="hl-box"><div class="k">主播 / 房间标题</div><div class="v" id="liveAnchorTitle" style="font-size:13px;">--</div></div>
+          <div class="hl-box"><div class="k">解析出的 RoomId</div><div class="v" id="liveResolvedRoomId" style="font-size:13px;">--</div></div>
+          <div class="hl-box"><div class="k">ECS 生成签名 (X-Bogus)</div><div class="v" id="liveResolvedSig" style="color:var(--green); font-size:13px;">--</div></div>
+          <div class="hl-box"><div class="k">已接收 Protobuf 消息数</div><div class="v" id="liveMsgCount">0</div></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">
+          <span>实时解码消息流（<code>proto/douyin_webcast.proto</code>）</span>
+          <div style="display:flex; gap:10px; flex-wrap:wrap; font-size:12px; color:var(--muted);">
+            <label><input type="checkbox" class="live-filter" value="chat" checked onchange="renderLiveFeed()" /> 弹幕</label>
+            <label><input type="checkbox" class="live-filter" value="gift" checked onchange="renderLiveFeed()" /> 礼物</label>
+            <label><input type="checkbox" class="live-filter" value="member" checked onchange="renderLiveFeed()" /> 进房</label>
+            <label><input type="checkbox" class="live-filter" value="like" checked onchange="renderLiveFeed()" /> 点赞</label>
+            <label><input type="checkbox" class="live-filter" value="social" checked onchange="renderLiveFeed()" /> 关注</label>
+            <label><input type="checkbox" class="live-filter" value="stats" checked onchange="renderLiveFeed()" /> 人数</label>
+            <label><input type="checkbox" class="live-filter" value="control" checked onchange="renderLiveFeed()" /> 控制</label>
+            <label><input type="checkbox" class="live-filter" value="other" onchange="renderLiveFeed()" /> 其他</label>
+          </div>
+        </div>
+        <div id="liveFeedBox" class="code-box" style="max-height: 440px; min-height: 220px;">输入抖音直播地址并点击「连接并监听实时消息」，或点击「Protobuf 编解码自测」验证离线编解码链路...</div>
+      </div>
+    </section>
+
+    <!-- Tab 3: Benchmark -->
+    <section id="tab-bench" class="tab-panel">
+      <div class="card">
+        <div class="card-title">
+          <span>ECS 管线 & Boa JS VM 并发压测</span>
+          <span class="pill pill-info">实时测试吞吐量与延迟</span>
+        </div>
+        <div class="form-grid" style="max-width: 680px;">
+          <div class="form-row">
+            <label>总请求次数 (1 - 100)</label>
+            <input type="number" id="benchTotal" value="20" min="1" max="100" />
+          </div>
+          <div class="form-row">
+            <label>并发数 (1 - 16)</label>
+            <input type="number" id="benchConc" value="4" min="1" max="16" />
+          </div>
+        </div>
+        <div class="btn-row">
+          <button class="btn btn-primary" id="benchRunBtn" onclick="runBenchmark()">开始并发压测</button>
+        </div>
+        <div class="progress-bar"><div class="progress-fill" id="benchProgress"></div></div>
+
+        <div class="result-highlights" style="margin-top: 14px;">
+          <div class="hl-box"><div class="k">吞吐量 (QPS)</div><div class="v" id="benchQps">--</div></div>
+          <div class="hl-box"><div class="k">成功率</div><div class="v" id="benchRate">--</div></div>
+          <div class="hl-box"><div class="k">最小 / 平均 / 最大延迟</div><div class="v" id="benchLat">--</div></div>
+          <div class="hl-box"><div class="k">总耗时</div><div class="v" id="benchWall">--</div></div>
+        </div>
+        <pre id="benchLog" class="code-box" style="margin-top: 12px;">等待启动压测...</pre>
+      </div>
+    </section>
+
+    <!-- Tab 3: Kwai UidToEid -->
+    <section id="tab-kwai" class="tab-panel">
+      <div class="grid-2">
+        <div class="card">
+          <div class="card-title">
+            <span>POST /Kwai/UidToEid 测试</span>
+            <span class="pill pill-info">移植自原 C# KwaiController</span>
+          </div>
+          <div class="form-row">
+            <label>UserId *</label>
+            <input type="text" id="kwaiUserId" placeholder="例如: 732982050" />
+          </div>
+          <div class="form-row">
+            <label>LiveStreamId *</label>
+            <input type="text" id="kwaiLiveStreamId" placeholder="输入直播间 LiveStreamId" />
+          </div>
+          <div class="form-row">
+            <label>Token (可选，留空使用默认配置)</label>
+            <input type="text" id="kwaiToken" placeholder="可选快手 Cookie token" />
+          </div>
+          <div class="btn-row">
+            <button class="btn btn-primary" onclick="sendKwaiReq()">发送请求</button>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-title"><span>响应输出</span></div>
+          <pre id="kwaiOutJson" class="code-box">{ "hint": "填写 UserId 和 LiveStreamId 后点击发送" }</pre>
+        </div>
+      </div>
+    </section>
+
+    <!-- Tab 4: ECS Inspector -->
+    <section id="tab-ecs" class="tab-panel">
+      <div class="card">
+        <div class="card-title">
+          <span>bevy_ecs System 执行管线 (Schedule Chain)</span>
+          <span class="pill pill-ok">8-Stage Deterministic Pipeline</span>
+        </div>
+        <div id="ecsPipeline" class="pipeline-list"></div>
+      </div>
+
+      <div class="grid-2">
+        <div class="card">
+          <div class="card-title"><span>JS VM Worker Entities (常驻实体)</span></div>
+          <table>
+            <thead>
+              <tr><th>Worker ID</th><th>状态</th><th>成功任务</th><th>失败任务</th></tr>
+            </thead>
+            <tbody id="ecsWorkersTable"></tbody>
+          </table>
+
+          <div class="card-title" style="margin-top: 20px;"><span>ServiceNode Entities (注册服务实体)</span></div>
+          <table>
+            <thead>
+              <tr><th>名称</th><th>路由</th><th>说明</th></tr>
+            </thead>
+            <tbody id="ecsServicesTable"></tbody>
+          </table>
+        </div>
+
+        <div class="card">
+          <div class="card-title">
+            <span>ApiKeyRegistry Resource 动态管理</span>
+          </div>
+          <div style="display:flex; gap:8px; margin-bottom:12px;">
+            <input type="text" id="newApiKeyInput" placeholder="输入新的 API Key（如 my-study-key-01）" />
+            <button class="btn btn-primary" onclick="addApiKey()">添加</button>
+          </div>
+          <div id="apiKeysList"></div>
+
+          <div style="margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border); display:flex; justify-content:space-between; align-items:center;">
+            <div>
+              <div style="font-size:13px; font-weight:600;">模拟原 C# 测试 Key 随机繁忙限流</div>
+              <div style="font-size:12px; color:var(--muted);">开启后，使用 legacy test-apikey 时有约 40% 概率返回 "The sign server is too busy."</div>
+            </div>
+            <input type="checkbox" id="busyToggle" onchange="toggleBusy(this.checked)" style="width:18px; height:18px; cursor:pointer;" />
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Tab 5: Live Logs -->
+    <section id="tab-logs" class="tab-panel">
+      <div class="card">
+        <div class="card-title">
+          <span>ECS RequestLogBuffer 实时请求日志（最近 200 条）</span>
+          <input type="text" id="logFilter" placeholder="按 RoomId / IP / 状态过滤..." style="max-width: 260px;" oninput="renderLogs()" />
+        </div>
+        <div style="overflow-x: auto;">
+          <table>
+            <thead>
+              <tr>
+                <th>时间</th>
+                <th>ID</th>
+                <th>接口</th>
+                <th>客户端 IP</th>
+                <th>RoomId / Target</th>
+                <th>状态</th>
+                <th>Signature</th>
+                <th>耗时</th>
+                <th>消息</th>
+              </tr>
+            </thead>
+            <tbody id="logsTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <footer>
+      DouyinSignServerRust · Powered by Rust, Axum, bevy_ecs &amp; Boa JS Engine · <strong>开源协议：MIT（仅限学习与技术交流使用）</strong>
+    </footer>
+  </div>
+
+  <script>
+    let latestSnapshot = null;
+    let snippetMode = 'curl';
+    let liveEventSource = null;
+    let liveMessages = [];
+    let liveTotalCount = 0;
+
+    // Tab switching
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+        btn.classList.add('active');
+        document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
+      });
+    });
+
+    function formatUptime(secs) {
+      const h = Math.floor(secs / 3600);
+      const m = Math.floor((secs % 3600) / 60);
+      const s = secs % 60;
+      return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+    }
+
+    function copyText(text, btn) {
+      if (!text) return;
+      navigator.clipboard.writeText(text).then(() => {
+        if (!btn) return;
+        const orig = btn.textContent;
+        btn.textContent = '已复制 ✓';
+        setTimeout(() => btn.textContent = orig, 1200);
+      });
+    }
+
+    function getDouyinPayload() {
+      const payload = {
+        ApiKey: document.getElementById('dyApiKey').value.trim(),
+        RoomId: document.getElementById('dyRoomId').value.trim(),
+        UserUniqueId: document.getElementById('dyUserUniqueId').value.trim(),
+        BrowserName: document.getElementById('dyBrowserName').value.trim() || undefined,
+        BrowserVersion: document.getElementById('dyBrowserVersion').value.trim() || undefined,
+        LiveUrl: document.getElementById('dyLiveUrl').value.trim() || undefined
+      };
+      Object.keys(payload).forEach(k => payload[k] === undefined && delete payload[k]);
+      return payload;
+    }
+
+    function setSnippetMode(mode) {
+      snippetMode = mode;
+      updateSnippets();
+    }
+
+    function updateSnippets() {
+      const origin = window.location.origin;
+      const bodyStr = JSON.stringify(getDouyinPayload(), null, 2);
+      const compact = JSON.stringify(getDouyinPayload());
+      let code = '';
+      if (snippetMode === 'curl') {
+        code = `curl -X POST "${origin}/Douyin/SignWss" \\\n  -H "Content-Type: application/json" \\\n  -d '${compact}'`;
+      } else if (snippetMode === 'powershell') {
+        code = `$body = @'\n${bodyStr}\n'@\nInvoke-RestMethod -Uri "${origin}/Douyin/SignWss" -Method Post -ContentType "application/json" -Body $body`;
+      } else {
+        code = `const resp = await fetch("${origin}/Douyin/SignWss", {\n  method: "POST",\n  headers: { "Content-Type": "application/json" },\n  body: JSON.stringify(${bodyStr})\n});\nconsole.log(await resp.json());`;
+      }
+      document.getElementById('snippetBox').textContent = code;
+    }
+
+    function fillSampleDouyin() {
+      document.getElementById('dyApiKey').value = 'demo-apikey-learning-only';
+      document.getElementById('dyRoomId').value = '7415791943831046921';
+      document.getElementById('dyUserUniqueId').value = '7410618736569206322';
+      document.getElementById('dyBrowserName').value = 'Mozilla';
+      updateSnippets();
+    }
+
+    function fillRandomDouyin() {
+      const randDigits = (len) => Array.from({length: len}, () => Math.floor(Math.random() * 10)).join('');
+      document.getElementById('dyRoomId').value = '741' + randDigits(16);
+      document.getElementById('dyUserUniqueId').value = '741' + randDigits(16);
+      updateSnippets();
+    }
+
+    function testInvalidKey() {
+      document.getElementById('dyApiKey').value = 'invalid-key-test';
+      updateSnippets();
+      sendDouyinSign();
+    }
+
+    async function sendDouyinSign() {
+      const badge = document.getElementById('dyStatusBadge');
+      badge.className = 'pill pill-info';
+      badge.textContent = '签名计算中...';
+      const t0 = performance.now();
+      try {
+        const res = await fetch('/Douyin/SignWss', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(getDouyinPayload())
+        });
+        const data = await res.json();
+        const elapsed = (performance.now() - t0).toFixed(2);
+        document.getElementById('dyOutLatency').textContent = elapsed + ' ms';
+        document.getElementById('dyOutJson').textContent = JSON.stringify(data, null, 2);
+
+        if (data.Code === 0 && data.Data) {
+          badge.className = 'pill pill-ok';
+          badge.textContent = '签名成功 (Code: 0)';
+          document.getElementById('dyOutSig').textContent = data.Data.Signature || '--';
+          document.getElementById('dyOutMd5').textContent = data.Data.StubMd5 || '--';
+          document.getElementById('dyOutWss').value = data.Data.WssUrl || '';
+        } else {
+          badge.className = 'pill pill-err';
+          badge.textContent = `拒绝/失败 (Code: ${data.Code})`;
+          document.getElementById('dyOutSig').textContent = '--';
+          document.getElementById('dyOutMd5').textContent = '--';
+          document.getElementById('dyOutWss').value = '';
+        }
+        refreshSnapshot();
+      } catch (err) {
+        badge.className = 'pill pill-err';
+        badge.textContent = '网络错误';
+        document.getElementById('dyOutJson').textContent = String(err);
+      }
+    }
+
+    async function runBenchmark() {
+      const total = Math.min(100, Math.max(1, parseInt(document.getElementById('benchTotal').value) || 10));
+      const conc = Math.min(16, Math.max(1, parseInt(document.getElementById('benchConc').value) || 2));
+      const btn = document.getElementById('benchRunBtn');
+      const bar = document.getElementById('benchProgress');
+      const logBox = document.getElementById('benchLog');
+      btn.disabled = true;
+      btn.textContent = '压测运行中...';
+      bar.style.width = '0%';
+      logBox.textContent = `开始执行 ${total} 次请求（并发 ${conc}）...\n`;
+
+      const basePayload = getDouyinPayload();
+      let completed = 0, success = 0;
+      const latencies = [];
+      const wallStart = performance.now();
+      let nextIdx = 0;
+
+      async function worker() {
+        while (true) {
+          const i = nextIdx++;
+          if (i >= total) break;
+          const payload = { ...basePayload, RoomId: String(7415791943831046900n + BigInt(i)) };
+          const t0 = performance.now();
+          try {
+            const resp = await fetch('/Douyin/SignWss', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(payload)
+            });
+            const json = await resp.json();
+            const dt = performance.now() - t0;
+            latencies.push(dt);
+            if (json.Code === 0) success++;
+            logBox.textContent += `#${i + 1} | Code=${json.Code} | Sig=${json.Data?.Signature || '-'} | ${dt.toFixed(1)} ms\n`;
+          } catch (e) {
+            logBox.textContent += `#${i + 1} | ERROR: ${e}\n`;
+          }
+          completed++;
+          bar.style.width = ((completed / total) * 100).toFixed(1) + '%';
+        }
+      }
+
+      await Promise.all(Array.from({ length: conc }, () => worker()));
+      const wallMs = performance.now() - wallStart;
+      const qps = (total / (wallMs / 1000)).toFixed(2);
+      const min = latencies.length ? Math.min(...latencies).toFixed(1) : '0';
+      const max = latencies.length ? Math.max(...latencies).toFixed(1) : '0';
+      const avg = latencies.length ? (latencies.reduce((a, b) => a + b, 0) / latencies.length).toFixed(1) : '0';
+
+      document.getElementById('benchQps').textContent = `${qps} req/s`;
+      document.getElementById('benchRate').textContent = `${success}/${total} (${((success / total) * 100).toFixed(1)}%)`;
+      document.getElementById('benchLat').textContent = `${min} / ${avg} / ${max} ms`;
+      document.getElementById('benchWall').textContent = `${wallMs.toFixed(0)} ms`;
+
+      btn.disabled = false;
+      btn.textContent = '开始并发压测';
+      refreshSnapshot();
+    }
+
+    async function sendKwaiReq() {
+      const payload = {
+        UserId: document.getElementById('kwaiUserId').value.trim(),
+        LiveStreamId: document.getElementById('kwaiLiveStreamId').value.trim(),
+        Token: document.getElementById('kwaiToken').value.trim() || undefined
+      };
+      document.getElementById('kwaiOutJson').textContent = '请求中...';
+      try {
+        const resp = await fetch('/Kwai/UidToEid', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const data = await resp.json();
+        document.getElementById('kwaiOutJson').textContent = JSON.stringify(data, null, 2);
+        refreshSnapshot();
+      } catch (err) {
+        document.getElementById('kwaiOutJson').textContent = String(err);
+      }
+    }
+
+    async function addApiKey() {
+      const input = document.getElementById('newApiKeyInput');
+      const key = input.value.trim();
+      if (!key) return;
+      await fetch('/api/keys', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ api_key: key })
+      });
+      input.value = '';
+      refreshSnapshot();
+    }
+
+    async function removeApiKey(key) {
+      await fetch('/api/keys', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ api_key: key })
+      });
+      refreshSnapshot();
+    }
+
+    async function toggleBusy(enabled) {
+      await fetch('/api/config/busy-simulation', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled })
+      });
+      refreshSnapshot();
+    }
+
+    function renderLogs() {
+      if (!latestSnapshot) return;
+      const kw = (document.getElementById('logFilter').value || '').toLowerCase();
+      const tbody = document.getElementById('logsTableBody');
+      const filtered = latestSnapshot.recent_logs.filter(l =>
+        !kw ||
+        l.room_id.toLowerCase().includes(kw) ||
+        l.client_ip.toLowerCase().includes(kw) ||
+        l.status.toLowerCase().includes(kw) ||
+        l.endpoint.toLowerCase().includes(kw)
+      );
+      if (filtered.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="9" style="text-align:center; color:var(--muted); padding:20px;">暂无匹配的请求日志</td></tr>';
+        return;
+      }
+      tbody.innerHTML = filtered.map(l => `
+        <tr>
+          <td class="mono">${l.timestamp}</td>
+          <td class="mono">${l.request_id}</td>
+          <td class="mono">${l.endpoint}</td>
+          <td class="mono">${l.client_ip}</td>
+          <td class="mono">${l.room_id || '-'}</td>
+          <td><span class="pill ${l.code === 0 ? 'pill-ok' : 'pill-err'}">${l.status} (${l.code})</span></td>
+          <td class="mono" style="color:var(--green);">${l.signature || '-'}</td>
+          <td class="mono">${l.latency_ms.toFixed(2)} ms</td>
+          <td style="color:var(--muted);">${l.message || '-'}</td>
+        </tr>
+      `).join('');
+    }
+
+    async function refreshSnapshot() {
+      const pill = document.getElementById('statusPill');
+      const statusText = document.getElementById('statusText');
+      try {
+        const res = await fetch('/api/ecs/snapshot');
+        const json = await res.json();
+        if (json.Code !== 0 || !json.Data) throw new Error('Invalid snapshot');
+        const snap = json.Data;
+        latestSnapshot = snap;
+
+        pill.className = 'status-pill';
+        statusText.textContent = 'ECS 运行正常';
+        document.getElementById('engineBadge').textContent = 'Engine: ' + snap.engine_name;
+
+        document.getElementById('kpiUptime').textContent = formatUptime(snap.metrics.uptime_secs);
+        document.getElementById('kpiTicks').textContent = `Ticks: ${snap.metrics.ecs_ticks} | Entities: ${snap.metrics.active_entities}`;
+        document.getElementById('kpiTotal').textContent = snap.metrics.total_requests;
+        document.getElementById('kpiBreakdown').textContent = `成功 ${snap.metrics.success_count} / 失败 ${snap.metrics.error_count}`;
+        document.getElementById('kpiLatency').textContent = `${snap.metrics.avg_latency_ms.toFixed(2)} ms`;
+        document.getElementById('kpiKeysWorkers').textContent = `${snap.api_keys.length} / ${snap.worker_entities.length}`;
+        document.getElementById('kpiArch').textContent = snap.architecture;
+
+        // Pipeline stages
+        document.getElementById('ecsPipeline').innerHTML = snap.systems_pipeline.map(s => `
+          <div class="stage-card">
+            <div class="stage-head">#${s.order} ${s.name}</div>
+            <div class="stage-role">${s.role}</div>
+            <div class="stage-comp">Components: ${s.components}</div>
+          </div>
+        `).join('');
+
+        // Workers table
+        document.getElementById('ecsWorkersTable').innerHTML = snap.worker_entities.map(w => `
+          <tr>
+            <td class="mono">Worker #${w.worker_id}</td>
+            <td><span class="pill ${w.status === 'ready' ? 'pill-ok' : 'pill-info'}">${w.status}</span></td>
+            <td class="mono">${w.tasks_completed}</td>
+            <td class="mono">${w.tasks_failed}</td>
+          </tr>
+        `).join('');
+
+        // Services table
+        document.getElementById('ecsServicesTable').innerHTML = snap.service_entities.map(s => `
+          <tr>
+            <td class="mono">${s.name}</td>
+            <td class="mono"><span class="pill pill-info">${s.method}</span> ${s.route}</td>
+            <td style="color:var(--muted);">${s.description}</td>
+          </tr>
+        `).join('');
+
+        // API keys dropdown & manager
+        const sel = document.getElementById('dyKeySelect');
+        const prevVal = sel.value;
+        sel.innerHTML = '<option value="">-- 选择活跃 API Key --</option>' +
+          snap.api_keys.map(k => `<option value="${k}">${k}</option>`).join('');
+        if (prevVal) sel.value = prevVal;
+
+        document.getElementById('apiKeysList').innerHTML = snap.api_keys.map(k => `
+          <div class="key-item">
+            <span>${k}</span>
+            <button class="btn btn-danger btn-sm" onclick="removeApiKey('${k.replace(/'/g, "\\'")}')">移除</button>
+          </div>
+        `).join('');
+
+        document.getElementById('busyToggle').checked = !!snap.config.simulate_test_key_busy;
+
+        renderLogs();
+      } catch (err) {
+        pill.className = 'status-pill offline';
+        statusText.textContent = '连接断开';
+      }
+    }
+
+    function formatLiveBadge(type) {
+      const map = {
+        chat: ['弹幕', 'pill-ok'],
+        gift: ['礼物', 'pill-err'],
+        member: ['进房', 'pill-info'],
+        like: ['点赞', 'pill-info'],
+        social: ['社交', 'pill-ok'],
+        stats: ['人数', 'pill-info'],
+        control: ['控制', 'pill-err'],
+        system: ['系统', 'pill-info'],
+        error: ['错误', 'pill-err'],
+        other: ['其他', 'pill-info']
+      };
+      const [label, cls] = map[type] || [type, 'pill-info'];
+      return `<span class="pill ${cls}">${label}</span>`;
+    }
+
+    function escapeHtml(str) {
+      return String(str ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+    }
+
+    function appendLiveEntry(entry) {
+      liveMessages.unshift(entry);
+      if (liveMessages.length > 300) liveMessages.pop();
+      renderLiveFeed();
+    }
+
+    function renderLiveFeed() {
+      const box = document.getElementById('liveFeedBox');
+      const allowed = new Set(
+        Array.from(document.querySelectorAll('.live-filter:checked')).map(cb => cb.value)
+      );
+      const visible = liveMessages.filter(m => m.event_type === 'system' || m.event_type === 'error' || allowed.has(m.event_type));
+      if (visible.length === 0) {
+        box.textContent = '暂无符合过滤条件的消息...';
+        return;
+      }
+      box.innerHTML = visible.map(m => {
+        const userPart = m.user ? `<strong style="color:#38bdf8;">${escapeHtml(m.user)}</strong>: ` : '';
+        return `<div style="padding:4px 0; border-bottom:1px solid rgba(30,41,59,0.6);">` +
+          `<span style="color:#64748b;">[${escapeHtml(m.timestamp)}]</span> ` +
+          `${formatLiveBadge(m.event_type)} ` +
+          `${userPart}${escapeHtml(m.content)}` +
+          (m.method ? ` <span style="color:#475569; font-size:11px;">(${escapeHtml(m.method)})</span>` : '') +
+          `</div>`;
+      }).join('');
+    }
+
+    function clearLiveFeed() {
+      liveMessages = [];
+      liveTotalCount = 0;
+      document.getElementById('liveMsgCount').textContent = '0';
+      renderLiveFeed();
+    }
+
+    function stopLiveStream() {
+      if (liveEventSource) {
+        liveEventSource.close();
+        liveEventSource = null;
+      }
+      document.getElementById('liveConnectBtn').disabled = false;
+      document.getElementById('liveStopBtn').disabled = true;
+      const badge = document.getElementById('liveConnBadge');
+      badge.className = 'pill pill-info';
+      badge.textContent = '已断开';
+    }
+
+    function startLiveStream() {
+      const liveUrl = document.getElementById('liveUrlInput').value.trim();
+      if (!liveUrl) {
+        alert('请先输入抖音直播间地址或房间号！');
+        return;
+      }
+      stopLiveStream();
+      clearLiveFeed();
+
+      const params = new URLSearchParams({
+        live_url: liveUrl,
+        api_key: document.getElementById('liveApiKeyInput').value.trim() || 'demo-apikey-learning-only'
+      });
+      const rid = document.getElementById('liveRoomIdOverride').value.trim();
+      const ttwid = document.getElementById('liveTtwidOverride').value.trim();
+      if (rid) params.set('room_id', rid);
+      if (ttwid) params.set('ttwid', ttwid);
+
+      const badge = document.getElementById('liveConnBadge');
+      badge.className = 'pill pill-info';
+      badge.textContent = '连接中...';
+      document.getElementById('liveConnectBtn').disabled = true;
+      document.getElementById('liveStopBtn').disabled = false;
+
+      liveEventSource = new EventSource('/api/live/stream?' + params.toString());
+      liveEventSource.onmessage = (e) => {
+        try {
+          const msg = JSON.parse(e.data);
+          if (msg.kind === 'status') {
+            appendLiveEntry({ timestamp: msg.timestamp, event_type: 'system', content: msg.message });
+          } else if (msg.kind === 'room_info') {
+            badge.className = 'pill pill-ok';
+            badge.textContent = '监听中 (WSS)';
+            document.getElementById('liveAnchorTitle').textContent = `${msg.room.anchor_name} · ${msg.room.title}`;
+            document.getElementById('liveResolvedRoomId').textContent = msg.room.room_id;
+            document.getElementById('liveResolvedSig').textContent = msg.signature;
+            refreshSnapshot();
+          } else if (msg.kind === 'live_message' && msg.event) {
+            liveTotalCount++;
+            document.getElementById('liveMsgCount').textContent = String(liveTotalCount);
+            appendLiveEntry(msg.event);
+          } else if (msg.kind === 'error') {
+            badge.className = 'pill pill-err';
+            badge.textContent = '连接异常';
+            appendLiveEntry({ timestamp: msg.timestamp, event_type: 'error', content: msg.message });
+            stopLiveStream();
+          }
+        } catch (err) {
+          console.error(err);
+        }
+      };
+      liveEventSource.onerror = () => {
+        if (liveEventSource && liveEventSource.readyState === EventSource.CLOSED) {
+          stopLiveStream();
+        }
+      };
+    }
+
+    async function resolveLiveRoomOnly() {
+      const liveUrl = document.getElementById('liveUrlInput').value.trim();
+      if (!liveUrl) {
+        alert('请先输入抖音直播间地址或房间号！');
+        return;
+      }
+      const res = await fetch('/api/live/resolve', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          live_url: liveUrl,
+          room_id: document.getElementById('liveRoomIdOverride').value.trim() || undefined,
+          ttwid: document.getElementById('liveTtwidOverride').value.trim() || undefined
+        })
+      });
+      const json = await res.json();
+      if (json.Code === 0 && json.Data) {
+        document.getElementById('liveAnchorTitle').textContent = `${json.Data.anchor_name} · ${json.Data.title} (${json.Data.status_text})`;
+        document.getElementById('liveResolvedRoomId').textContent = json.Data.room_id;
+        appendLiveEntry({
+          timestamp: new Date().toTimeString().slice(0, 8),
+          event_type: 'system',
+          content: `房间解析成功：主播「${json.Data.anchor_name}」RoomId=${json.Data.room_id}，状态=${json.Data.status_text}`
+        });
+      } else {
+        appendLiveEntry({
+          timestamp: new Date().toTimeString().slice(0, 8),
+          event_type: 'error',
+          content: json.Msg || '解析失败'
+        });
+      }
+    }
+
+    async function runProtoSelfTest() {
+      const res = await fetch('/api/proto/selftest', { method: 'POST' });
+      const json = await res.json();
+      if (json.Code === 0 && json.Data) {
+        appendLiveEntry({
+          timestamp: new Date().toTimeString().slice(0, 8),
+          event_type: 'system',
+          content: `Protobuf 离线自测通过！源文件=${json.Data.proto_file}，编码后 PushFrame=${json.Data.encoded_frame_bytes} bytes，Hex=${json.Data.encoded_frame_hex_preview}`
+        });
+        for (const ev of (json.Data.decoded_messages || [])) {
+          liveTotalCount++;
+          document.getElementById('liveMsgCount').textContent = String(liveTotalCount);
+          appendLiveEntry(ev);
+        }
+      } else {
+        appendLiveEntry({
+          timestamp: new Date().toTimeString().slice(0, 8),
+          event_type: 'error',
+          content: json.Msg || '自测失败'
+        });
+      }
+    }
+
+    updateSnippets();
+    refreshSnapshot();
+    setInterval(() => {
+      if (document.getElementById('autoRefresh').checked) {
+        refreshSnapshot();
+      }
+    }, 2000);
+  </script>
+</body>
+</html>

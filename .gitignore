@@ -1,0 +1,29 @@
+# Rust / Cargo build outputs
+/target
+**/*.rs.bk
+*.pdb
+
+# Local runtime config & secrets (use config.example.toml as template)
+/config.toml
+*.local.toml
+.env
+.env.*
+
+# Runtime logs
+/logs
+logs_*.txt
+LiveUrl.txt
+*.log
+
+# IDEs & Editors
+.idea/
+.vscode/
+*.iml
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+Thumbs.db
+desktop.ini

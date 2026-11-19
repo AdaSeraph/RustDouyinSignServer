@@ -1,0 +1,30 @@
+# DouyinSignServerRust 配置文件示例
+# 请复制本文件为 `config.toml` 并按需修改（`config.toml` 已加入 .gitignore，不会提交到仓库）
+# 环境变量优先级高于 config.toml
+
+[server]
+host = "0.0.0.0"
+port = 5289
+script_path = "scripts/webmssdk.vm.js"
+js_worker_count = 2
+
+[logging]
+log_to_file = true
+log_dir = "logs"
+
+[auth]
+# 是否模拟原 C# 版本对 legacy test key 的随机繁忙拦截
+simulate_test_key_busy = false
+# 允许调用 /Douyin/SignWss 的 API Key 列表
+api_keys = [
+  "demo-apikey-learning-only",
+  "test-apikey-de9991ea-bf2b-454c-7982-adddfe0581ac-96c0642e-7d1d-87a7-08b2-eff81edae4d3",
+]
+
+[kwai]
+# 快手签名服务地址（可选，若不需要 /Kwai/UidToEid 可留空）
+sign_endpoint = ""
+# 快手签名服务 ApiKey
+api_key = ""
+# 快手接口默认 Cookie Token（请求未传 Token 时使用）
+default_token = ""

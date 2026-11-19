@@ -1,0 +1,35 @@
+[package]
+name = "douyin-sign-server-rust"
+version = "0.1.0"
+edition = "2024"
+description = "Modern Rust + ECS (bevy_ecs) implementation of DouyinSignServer with an interactive Web GUI test console (Educational/Learning Purpose Only)"
+license = "MIT"
+
+[dependencies]
+axum = "0.8"
+bevy_ecs = "0.15"
+boa_engine = "0.20"
+chrono = { version = "0.4", features = ["serde"] }
+flate2 = "1"
+futures-util = "0.3"
+hex = "0.4"
+md-5 = "0.10"
+prost = "0.13"
+rand = "0.9"
+regex = "1"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "gzip", "cookies"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["full"] }
+tokio-stream = { version = "0.1", features = ["sync"] }
+tokio-tungstenite = { version = "0.26", features = ["rustls-tls-webpki-roots"] }
+toml = "0.8"
+tower-http = { version = "0.6", features = ["cors", "trace"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+urlencoding = "2"
+uuid = { version = "1", features = ["v4"] }
+
+[build-dependencies]
+prost-build = "0.13"
+protoc-bin-vendored = "3"
