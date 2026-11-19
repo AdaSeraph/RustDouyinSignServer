@@ -5,7 +5,7 @@
 > 本项目基于 **MIT 协议**开源，**仅限用于学习与技术研究目的**（学习现代 Rust 2024、ECS 架构 `bevy_ecs`、纯 Rust JS 引擎 `boa_engine` 与 `axum` 异步 Web 服务开发）。
 > 严禁将本项目用于任何商业用途、违规抓取或违反第三方平台服务条款的行为。使用本项目所产生的一切后果由使用者自行承担。
 
-将原有 C# (.NET 8 + ClearScript V8) 开发的 `DouyinSignServer` 完整迁移重构为**现代 Rust (Edition 2024)** + **ECS（Entity-Component-System）架构**的信令签名服务器，并内置零外部依赖的**完整 Web GUI 测试与 ECS 监控控制台**。
+**现代 Rust (Edition 2024)** + **ECS（Entity-Component-System）架构**的信令签名服务器，并内置零外部依赖的**完整 Web GUI 测试与 ECS 监控控制台**。
 
 ---
 
@@ -14,9 +14,6 @@
 - **纯 Rust 现代技术栈**：`Rust 2024` + `tokio` + `axum 0.8` + `bevy_ecs 0.15` + `boa_engine 0.20`
 - **真正的 ECS 架构**：使用 `bevy_ecs` 驱动整个请求生命周期，每个签名请求以 Entity 进入 World，依次流经 8 个确定性 System 管线阶段
 - **常驻 JS VM Worker 池**：使用纯 Rust 的 `boa_engine` 加载 `scripts/webmssdk.vm.js`，无需 V8/C++ 原生动态库，跨平台开箱即用；相比原 C# 每次请求重建 `V8ScriptEngine`，Rust 版本在启动时预热常驻 VM 池，大幅降低签名延迟
-- **100% 兼容原 C# 接口协议**：
-  - `POST /Douyin/SignWss`（兼容 PascalCase / camelCase / snake_case 请求体，返回标准 `ApiResultModel`）
-  - `POST /Kwai/UidToEid`（完整移植原 `KwaiController` 逻辑）
 - **内置完整 Web GUI 测试台（`GET /`）**：
   - 抖音 WSS 签名交互式测试 + cURL / PowerShell / Fetch 代码生成
   - 并发压测工具（支持自定义总请求数与并发度，实时计算 QPS 与最小/平均/最大延迟）
@@ -26,16 +23,16 @@
 
 ---
 
-## 原 C# 版本 vs 现代 Rust ECS 版本对比
+##现代 Rust ECS 版本对比
 
-| 维度 | 原 C# (`DouyinSignServer`) | 新 Rust (`DouyinSignServerRust`) |
+| 维度 | | 新 Rust (`DouyinSignServerRust`) |
 | --- | --- | --- |
-| 运行时 | .NET 8 (`net8.0-windows` 绑定 Windows) | 原生编译单文件二进制（跨平台 Windows/Linux/macOS） |
-| 架构模式 | 传统 ASP.NET Core MVC Controller | `bevy_ecs` Entity-Component-System 管线架构 |
-| JS 签名引擎 | `ClearScript.V8`（每次请求新建并销毁 V8 实例） | 纯 Rust `boa_engine` 常驻多线程 VM 池（启动预热一次） |
-| Web 框架 | ASP.NET Core + Swagger | `axum 0.8` + `tokio` + 内置现代化 GUI 控制台 |
-| API Key 管理 | 硬编码在 `DouyinController.cs` | ECS `ApiKeyRegistry` Resource（支持环境变量与 GUI 动态增删） |
-| 可观测性 | 仅本地文本日志 | 实时 ECS World 快照 API + GUI 指标卡片 + 实时日志 + 可选文件日志 |
+| 运行时 | | 原生编译单文件二进制（跨平台 Windows/Linux/macOS） |
+| 架构模式 | | `bevy_ecs` Entity-Component-System 管线架构 |
+| JS 签名引擎 | | 纯 Rust `boa_engine` 常驻多线程 VM 池（启动预热一次） |
+| Web 框架 | | `axum 0.8` + `tokio` + 内置现代化 GUI 控制台 |
+| API Key 管理 || ECS `ApiKeyRegistry` Resource（支持环境变量与 GUI 动态增删） |
+| 可观测性 |  | 实时 ECS World 快照 API + GUI 指标卡片 + 实时日志 + 可选文件日志 |
 
 ---
 
