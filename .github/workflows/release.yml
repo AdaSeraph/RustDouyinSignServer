@@ -1,0 +1,83 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: windows-latest, target: x86_64-pc-windows-msvc, ext: .exe }
+          - { os: ubuntu-latest, target: x86_64-unknown-linux-gnu, ext: "" }
+          - { os: macos-latest, target: aarch64-apple-darwin, ext: "" }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - run: cargo build --release --target ${{ matrix.target }}
+      - name: Package
+        shell: bash
+        run: |
+          name=douyin-sign-server-rust-${{ github.ref_name }}-${{ matrix.target }}
+          mkdir -p dist/$name
+          cp target/${{ matrix.target }}/release/douyin-sign-server-rust${{ matrix.ext }} dist/$name/
+          cp -r scripts static config.example.toml LICENSE README.md dist/$name/
+          cd dist
+          if [ "${{ runner.os }}" = "Windows" ]; then 7z a $name.zip $name; else tar czf $name.tar.gz $name; fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.target }}
+          path: dist/*.*z*
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
+          body: |
+            > [!CAUTION]
+            > 仅供个人学习与非商业技术研究，严禁商业及任何违法违规用途。使用本项目产生的一切后果与法律责任由使用者本人承担，与作者无关。下载即视为同意 LICENSE 全部条款。
+            > For learning & non-commercial research only. Users bear sole legal responsibility. Downloading means you accept the LICENSE.
+
+            Docker: `docker pull ghcr.io/adaseraph/rustdouyinsignserver:${{ github.ref_name }}`
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/metadata-action@v5
+        id: meta
+        with:
+          images: ghcr.io/adaseraph/rustdouyinsignserver
+          tags: |
+            type=semver,pattern={{version}}
+            type=raw,value=latest
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
