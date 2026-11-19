@@ -23,16 +23,16 @@
 
 ---
 
-##现代 Rust ECS 版本对比
+##现代 Rust ECS 版本
 
-| 维度 | | 新 Rust (`DouyinSignServerRust`) |
-| --- | --- | --- |
-| 运行时 | | 原生编译单文件二进制（跨平台 Windows/Linux/macOS） |
-| 架构模式 | | `bevy_ecs` Entity-Component-System 管线架构 |
-| JS 签名引擎 | | 纯 Rust `boa_engine` 常驻多线程 VM 池（启动预热一次） |
-| Web 框架 | | `axum 0.8` + `tokio` + 内置现代化 GUI 控制台 |
-| API Key 管理 || ECS `ApiKeyRegistry` Resource（支持环境变量与 GUI 动态增删） |
-| 可观测性 |  | 实时 ECS World 快照 API + GUI 指标卡片 + 实时日志 + 可选文件日志 |
+| 维度 |  新 Rust (`DouyinSignServerRust`) |
+| --- | --- |
+| 运行时 | 原生编译单文件二进制（跨平台 Windows/Linux/macOS） |
+| 架构模式 | `bevy_ecs` Entity-Component-System 管线架构 |
+| JS 签名引擎 | 纯 Rust `boa_engine` 常驻多线程 VM 池（启动预热一次） |
+| Web 框架 | `axum 0.8` + `tokio` + 内置现代化 GUI 控制台 |
+| API Key 管理 | ECS `ApiKeyRegistry` Resource（支持环境变量与 GUI 动态增删） |
+| 可观测性 | 实时 ECS World 快照 API + GUI 指标卡片 + 实时日志 + 可选文件日志 |
 
 ---
 
