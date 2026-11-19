@@ -30,7 +30,13 @@ async fn main() {
 
     info!("============================================================");
     info!("  DouyinSignServerRust (Rust + bevy_ecs + Boa JS Engine)");
-    info!("  NOTICE: 仅供学习与技术研究使用 (Educational Purpose Only)");
+    info!("============================================================");
+    tracing::warn!("【免责声明 / DISCLAIMER】");
+    tracing::warn!("  本项目仅供个人学习与非商业技术研究，严禁商业及任何违法违规用途。");
+    tracing::warn!("  使用本项目产生的一切后果与法律责任由使用者本人承担，与作者无关。");
+    tracing::warn!("  本项目与抖音/字节跳动/快手等平台无关联。继续运行即视为同意 LICENSE 全部条款。");
+    tracing::warn!("  For learning & non-commercial research ONLY. Users bear sole legal");
+    tracing::warn!("  responsibility. Running this software means you accept the LICENSE.");
     info!("============================================================");
     info!(
         script = %config.script_path,

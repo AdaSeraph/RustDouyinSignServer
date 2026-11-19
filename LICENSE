@@ -1,54 +1,84 @@
-MIT License (For Educational & Learning Purposes Only)
-
-Copyright (c) 2026 DouyinSignServerRust Contributors
-
-================================================================================
-EDUCATIONAL & LEARNING PURPOSE NOTICE / 学习目的特别声明
-================================================================================
-
-This software and its associated documentation files ("the Software") are
-provided STRICTLY FOR EDUCATIONAL, ACADEMIC, AND PERSONAL LEARNING PURPOSES,
-specifically for studying:
-  - Modern Rust (Edition 2024) backend engineering
-  - Entity-Component-System (ECS) architecture using `bevy_ecs`
-  - Embedded JavaScript engine integration (`boa_engine`)
-  - High-concurrency asynchronous HTTP services (`axum` + `tokio`)
-
-By using, copying, modifying, or distributing this Software, you acknowledge
-and agree that:
-  1. You will NOT use this Software for any commercial purpose, unauthorized
-     data scraping, service disruption, or any activity that violates the
-     Terms of Service of any third-party platform or applicable laws.
-  2. The authors and contributors assume NO responsibility or liability for
-     any misuse, legal consequences, or damages arising from the use of this
-     Software.
-
-本项目及随附文档**仅限用于学习、学术研究与技术交流目的**（例如学习现代 Rust
-语言、ECS 架构设计与异步 Web 服务开发）。
-使用、复制、修改或分发本项目即表示您同意：
-  1. 严禁将本项目用于任何商业用途、未经授权的数据抓取、接口滥用或任何违反
-     第三方平台服务条款及适用法律法规的行为。
-  2. 作者及贡献者不对因不当使用本项目而导致的任何法律责任或损失承担任何义务。
+DouyinSignServerRust Non-Commercial Educational License
+Copyright (c) 2026 AdaSeraph
 
 ================================================================================
-MIT LICENSE TERMS
+English
 ================================================================================
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+1. Grant
+   Permission is granted, free of charge, to any person obtaining a copy of this
+   software and associated files (the "Software"), to use, copy, modify and
+   distribute the Software, SOLELY for personal learning, teaching and
+   non-commercial technical research, subject to the conditions below.
 
-The above copyright notice, this permission notice, and the Educational &
-Learning Purpose Notice above shall be included in all copies or substantial
-portions of the Software.
+2. Restrictions
+   You may NOT use the Software, in whole or in part, or any derivative work:
+   a) for any commercial purpose, including selling, renting, paid services,
+      SaaS, or integrating it into any revenue-generating product or business;
+   b) to violate any law or regulation of any jurisdiction, including laws on
+      cybersecurity, personal information protection, data security, unfair
+      competition and intellectual property;
+   c) to infringe the rights of any third-party platform or its users,
+      including violating platform terms of service, bulk data scraping,
+      collecting personal information, disrupting services, or traffic fraud;
+   d) for any other malicious, fraudulent or harmful purpose.
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+3. Conditions
+   a) This license notice and the copyright notice must be included in all
+      copies or substantial portions of the Software.
+   b) Derivative works must be distributed under this same license.
+   c) Any violation of Section 2 automatically and immediately terminates all
+      rights granted to you under this license.
+
+4. Disclaimer & Assumption of Risk
+   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND. The author
+   does not operate, control or monitor any deployment of the Software and has
+   no knowledge of how any third party uses it. ANY USE OF THE SOFTWARE IS AT
+   THE USER'S OWN RISK. The user alone bears full legal responsibility for all
+   consequences arising from their use, including any civil, administrative or
+   criminal liability. IN NO EVENT SHALL THE AUTHOR OR CONTRIBUTORS BE LIABLE
+   FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY ARISING FROM, OUT OF OR IN
+   CONNECTION WITH THE SOFTWARE OR ITS USE BY ANY PERSON.
+
+5. Trademarks
+   This project is not affiliated with, endorsed by, or sponsored by Douyin,
+   ByteDance, Kuaishou or any other platform. All trademarks belong to their
+   respective owners. If any rights holder believes this project infringes
+   their rights, please contact the author via GitHub Issues and it will be
+   handled or removed promptly.
+
+================================================================================
+中文
+================================================================================
+
+1. 授权
+   任何获得本软件及相关文件（“本软件”）副本的人，可免费使用、复制、修改和分发
+   本软件，但【仅限】个人学习、教学及非商业性的技术研究，并须遵守以下条款。
+
+2. 禁止事项
+   不得将本软件（全部或部分）或其衍生作品用于：
+   a) 任何商业用途，包括出售、出租、付费服务、SaaS，或集成到任何营利产品或业务中；
+   b) 违反任何国家或地区的法律法规，包括但不限于网络安全、个人信息保护、数据安全、
+      反不正当竞争及知识产权相关法律；
+   c) 侵害任何第三方平台或其用户的权益，包括违反平台服务条款、批量抓取数据、
+      收集个人信息、干扰服务正常运行、刷量作弊等；
+   d) 其他任何恶意、欺诈或有害目的。
+
+3. 条件
+   a) 本软件的所有副本或主要部分中须保留本许可声明及版权声明；
+   b) 衍生作品须以本许可证相同条款分发；
+   c) 一旦违反第 2 条，本许可证授予的全部权利立即自动终止。
+
+4. 免责与风险自担
+   本软件按“原样”提供，不附带任何形式的担保。作者不运营、不控制、不监控本软件的
+   任何部署，亦不知晓任何第三方的具体使用方式。使用本软件的一切风险由使用者自行承担，
+   因使用本软件产生的全部后果（包括任何民事、行政或刑事责任）均由使用者本人独立承担，
+   与作者及贡献者无关。在任何情况下，作者及贡献者均不对因本软件或任何人使用本软件
+   而产生的任何索赔、损害或其他责任负责。
+
+5. 商标
+   本项目与抖音、字节跳动、快手或任何其他平台均无关联，未获其认可或赞助。所有商标
+   归其各自所有者所有。如权利人认为本项目侵犯其合法权益，请通过 GitHub Issues 联系
+   作者，作者将及时处理或删除。
+
+如中英文版本存在歧义，以中文版本为准。

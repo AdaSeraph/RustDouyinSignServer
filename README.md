@@ -1,9 +1,15 @@
 # DouyinSignServerRust
 
-> **重要免责声明 / Educational Purpose Only**
+> [!CAUTION]
+> ## 免责声明 / Disclaimer
 >
-> 本项目基于 **MIT 协议**开源，**仅限用于学习与技术研究目的**（学习现代 Rust 2024、ECS 架构 `bevy_ecs`、纯 Rust JS 引擎 `boa_engine` 与 `axum` 异步 Web 服务开发）。
-> 严禁将本项目用于任何商业用途、违规抓取或违反第三方平台服务条款的行为。使用本项目所产生的一切后果由使用者自行承担。
+> 1. 本项目**仅供个人学习与非商业技术研究**（现代 Rust 2024、ECS 架构 `bevy_ecs`、纯 Rust JS 引擎 `boa_engine`、`axum` 异步 Web 开发），**严禁任何商业用途**。
+> 2. **严禁**将本项目用于违反法律法规、违反第三方平台服务条款、批量抓取数据、收集个人信息、干扰平台服务、刷量作弊等任何违法违规行为。
+> 3. 作者**不运营、不控制、不监控**任何人对本项目的部署与使用，亦不提供任何在线服务。**任何人使用本项目（包括其衍生作品）所产生的一切后果及法律责任（民事、行政、刑事），均由使用者本人独立承担，与作者及贡献者无关。**
+> 4. 本项目与抖音、字节跳动、快手等任何平台**均无关联**。如权利人认为本项目侵犯其权益，请提交 Issue，作者将及时处理或删除。
+> 5. **下载、克隆、编译或运行本项目，即视为您已阅读、理解并同意本声明及 [LICENSE](LICENSE) 的全部条款；若不同意，请立即删除。**
+>
+> *For personal learning and non-commercial research only. Commercial use and any illegal use or use that violates platform ToS are strictly prohibited. The author does not operate or control any deployment; users bear full and sole legal responsibility for their use. Not affiliated with Douyin/ByteDance/Kuaishou. By using this project you agree to this disclaimer and the [LICENSE](LICENSE).*
 
 **现代 Rust (Edition 2024)** + **ECS（Entity-Component-System）架构**的信令签名服务器，并内置零外部依赖的**完整 Web GUI 测试与 ECS 监控控制台**。
 
@@ -179,7 +185,7 @@ DouyinSignServerRust/
 ├── Cargo.toml
 ├── build.rs                    # 编译期通过 prost-build + protoc-bin-vendored 自动生成 Rust Protobuf 代码
 ├── config.example.toml         # 配置文件模板（复制为 config.toml 使用）
-├── LICENSE                     # MIT 开源协议（含学习目的特别声明）
+├── LICENSE                     # 非商业学习许可证（含免责声明）
 ├── README.md
 ├── proto/
 │   └── douyin_webcast.proto    # 抖音 Webcast IM Push v2 原始 Protobuf 定义文件
@@ -209,4 +215,4 @@ DouyinSignServerRust/
 
 ## 开源协议
 
-本项目采用 **MIT License** 开源，并在 [LICENSE](./LICENSE) 中明确标注了**仅限学习与技术研究目的（For Educational & Learning Purposes Only）**。
+本项目采用 **DouyinSignServerRust 非商业学习许可证**（见 [LICENSE](./LICENSE)）：仅限个人学习与非商业研究，禁止商业及任何违法违规用途，使用后果由使用者自行承担。

@@ -3,7 +3,8 @@ name = "douyin-sign-server-rust"
 version = "0.1.0"
 edition = "2024"
 description = "Modern Rust + ECS (bevy_ecs) implementation of DouyinSignServer with an interactive Web GUI test console (Educational/Learning Purpose Only)"
-license = "MIT"
+license-file = "LICENSE"
+repository = "https://github.com/AdaSeraph/RustDouyinSignServer"
 
 [dependencies]
 axum = "0.8"
