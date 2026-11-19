@@ -419,7 +419,7 @@
           DouyinSignServerRust
           <span class="badge">Rust 2024 + bevy_ecs</span>
         </h1>
-        <p>由原 C# DouyinSignServer 迁移重构的现代 Rust + ECS 架构信令签名服务器与可视化测试控制台</p>
+        <p>基于现代 Rust + ECS 架构的高性能信令签名服务器与可视化测试控制台</p>
       </div>
       <div class="header-actions">
         <label style="font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 6px; cursor: pointer;">
@@ -473,7 +473,7 @@
         <div class="card">
           <div class="card-title">
             <span>POST /Douyin/SignWss 请求参数</span>
-            <span class="pill pill-info">兼容原 C# PascalCase</span>
+            <span class="pill pill-info">PascalCase JSON</span>
           </div>
 
           <div class="form-row">
@@ -679,7 +679,7 @@
         <div class="card">
           <div class="card-title">
             <span>POST /Kwai/UidToEid 测试</span>
-            <span class="pill pill-info">移植自原 C# KwaiController</span>
+            <span class="pill pill-info">快手 UID 转 EID 接口</span>
           </div>
           <div class="form-row">
             <label>UserId *</label>
@@ -745,7 +745,7 @@
 
           <div style="margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border); display:flex; justify-content:space-between; align-items:center;">
             <div>
-              <div style="font-size:13px; font-weight:600;">模拟原 C# 测试 Key 随机繁忙限流</div>
+              <div style="font-size:13px; font-weight:600;">模拟测试 Key 随机繁忙限流</div>
               <div style="font-size:12px; color:var(--muted);">开启后，使用 legacy test-apikey 时有约 40% 概率返回 "The sign server is too busy."</div>
             </div>
             <input type="checkbox" id="busyToggle" onchange="toggleBusy(this.checked)" style="width:18px; height:18px; cursor:pointer;" />
@@ -793,6 +793,14 @@
     let liveEventSource = null;
     let liveMessages = [];
     let liveTotalCount = 0;
+    let liveDroppedCount = 0;
+    let liveWindowCount = 0;
+    let liveWindowStart = performance.now();
+    let liveCurrentRate = 0;
+    let liveRenderScheduled = false;
+    let liveLastRenderTs = 0;
+    const LIVE_MAX_BUFFER = 500;
+    const LIVE_RENDER_INTERVAL_MS = 80;
 
     // Tab switching
     document.querySelectorAll('.tab-btn').forEach(btn => {
@@ -1150,10 +1158,61 @@
         .replace(/>/g, '&gt;');
     }
 
+    function updateLiveStatsDisplay() {
+      const now = performance.now();
+      const elapsedSec = (now - liveWindowStart) / 1000;
+      if (elapsedSec >= 1.0) {
+        liveCurrentRate = Math.round(liveWindowCount / elapsedSec);
+        liveWindowCount = 0;
+        liveWindowStart = now;
+      }
+      const dropPart = liveDroppedCount > 0 ? ` · 丢弃 ${liveDroppedCount}` : '';
+      const ratePart = liveCurrentRate > 0 ? ` (${liveCurrentRate} msg/s)` : '';
+      document.getElementById('liveMsgCount').textContent = `${liveTotalCount}${ratePart}${dropPart}`;
+    }
+
+    function scheduleLiveRender() {
+      if (liveRenderScheduled) return;
+      liveRenderScheduled = true;
+      const run = () => {
+        const now = performance.now();
+        const wait = LIVE_RENDER_INTERVAL_MS - (now - liveLastRenderTs);
+        if (wait > 0) {
+          setTimeout(() => requestAnimationFrame(flushRender), wait);
+        } else {
+          requestAnimationFrame(flushRender);
+        }
+      };
+      const flushRender = () => {
+        liveRenderScheduled = false;
+        liveLastRenderTs = performance.now();
+        updateLiveStatsDisplay();
+        renderLiveFeed();
+      };
+      run();
+    }
+
     function appendLiveEntry(entry) {
-      liveMessages.unshift(entry);
-      if (liveMessages.length > 300) liveMessages.pop();
-      renderLiveFeed();
+      liveMessages.push(entry);
+      if (liveMessages.length > LIVE_MAX_BUFFER) {
+        liveMessages = liveMessages.slice(liveMessages.length - LIVE_MAX_BUFFER);
+      }
+      scheduleLiveRender();
+    }
+
+    function appendLiveBatch(entries) {
+      if (!entries || entries.length === 0) return;
+      if (entries.length >= LIVE_MAX_BUFFER) {
+        liveMessages = entries.slice(entries.length - LIVE_MAX_BUFFER);
+      } else {
+        for (let i = 0; i < entries.length; i++) {
+          liveMessages.push(entries[i]);
+        }
+        if (liveMessages.length > LIVE_MAX_BUFFER) {
+          liveMessages = liveMessages.slice(liveMessages.length - LIVE_MAX_BUFFER);
+        }
+      }
+      scheduleLiveRender();
     }
 
     function renderLiveFeed() {
@@ -1161,25 +1220,37 @@
       const allowed = new Set(
         Array.from(document.querySelectorAll('.live-filter:checked')).map(cb => cb.value)
       );
-      const visible = liveMessages.filter(m => m.event_type === 'system' || m.event_type === 'error' || allowed.has(m.event_type));
-      if (visible.length === 0) {
-        box.textContent = '暂无符合过滤条件的消息...';
-        return;
-      }
-      box.innerHTML = visible.map(m => {
+      const htmlParts = [];
+      // Render newest first without mutating `liveMessages`
+      for (let i = liveMessages.length - 1; i >= 0; i--) {
+        const m = liveMessages[i];
+        if (m.event_type !== 'system' && m.event_type !== 'error' && !allowed.has(m.event_type)) {
+          continue;
+        }
         const userPart = m.user ? `<strong style="color:#38bdf8;">${escapeHtml(m.user)}</strong>: ` : '';
-        return `<div style="padding:4px 0; border-bottom:1px solid rgba(30,41,59,0.6);">` +
+        htmlParts.push(
+          `<div style="padding:4px 0; border-bottom:1px solid rgba(30,41,59,0.6);">` +
           `<span style="color:#64748b;">[${escapeHtml(m.timestamp)}]</span> ` +
           `${formatLiveBadge(m.event_type)} ` +
           `${userPart}${escapeHtml(m.content)}` +
           (m.method ? ` <span style="color:#475569; font-size:11px;">(${escapeHtml(m.method)})</span>` : '') +
-          `</div>`;
-      }).join('');
+          `</div>`
+        );
+      }
+      if (htmlParts.length === 0) {
+        box.textContent = '暂无符合过滤条件的消息...';
+        return;
+      }
+      box.innerHTML = htmlParts.join('');
     }
 
     function clearLiveFeed() {
       liveMessages = [];
       liveTotalCount = 0;
+      liveDroppedCount = 0;
+      liveWindowCount = 0;
+      liveCurrentRate = 0;
+      liveWindowStart = performance.now();
       document.getElementById('liveMsgCount').textContent = '0';
       renderLiveFeed();
     }
@@ -1233,9 +1304,15 @@
             document.getElementById('liveResolvedRoomId').textContent = msg.room.room_id;
             document.getElementById('liveResolvedSig').textContent = msg.signature;
             refreshSnapshot();
+          } else if (msg.kind === 'live_message_batch' && Array.isArray(msg.events)) {
+            const count = msg.events.length;
+            liveTotalCount = typeof msg.total_received === 'number' ? msg.total_received : (liveTotalCount + count);
+            liveDroppedCount = typeof msg.dropped === 'number' ? msg.dropped : liveDroppedCount;
+            liveWindowCount += count;
+            appendLiveBatch(msg.events);
           } else if (msg.kind === 'live_message' && msg.event) {
             liveTotalCount++;
-            document.getElementById('liveMsgCount').textContent = String(liveTotalCount);
+            liveWindowCount++;
             appendLiveEntry(msg.event);
           } else if (msg.kind === 'error') {
             badge.className = 'pill pill-err';

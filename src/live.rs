@@ -1,7 +1,8 @@
 use crate::ecs::EcsHandle;
 use crate::models::DouyinSignWssRequest;
+use crate::proto::webcast::Message as ProtoMessage;
 use crate::proto::{
-    DecodedLiveEvent, decode_push_frame, decode_webcast_message, encode_ack_frame,
+    DecodedLiveEvent, decode_push_frame, decode_webcast_messages_batch, encode_ack_frame,
     encode_heartbeat_frame,
 };
 use chrono::Local;
@@ -9,14 +10,21 @@ use futures_util::{SinkExt, StreamExt};
 use rand::Rng;
 use regex::Regex;
 use serde::Serialize;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::Duration;
 use tokio::sync::mpsc;
+use tokio::time::MissedTickBehavior;
 use tokio_tungstenite::tungstenite::Message as WsMessage;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use tokio_tungstenite::tungstenite::http::header::{COOKIE, ORIGIN, USER_AGENT};
+use tokio_tungstenite::tungstenite::protocol::WebSocketConfig;
 use tracing::{debug, info, warn};
 
 const BROWSER_UA: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
+const DECODE_QUEUE_CAPACITY: usize = 4096;
+const WS_WRITE_QUEUE_CAPACITY: usize = 1024;
+const MAX_RECONNECT_ATTEMPTS: u32 = 5;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct LiveRoomInfo {
@@ -43,8 +51,14 @@ pub enum LiveStreamEvent {
         wss_url: String,
         signature: String,
     },
+    #[allow(dead_code)]
     LiveMessage {
         event: DecodedLiveEvent,
+    },
+    LiveMessageBatch {
+        events: Vec<DecodedLiveEvent>,
+        total_received: u64,
+        dropped: u64,
     },
     Error {
         timestamp: String,
@@ -312,177 +326,386 @@ pub fn spawn_live_stream_task(
             })
             .await;
 
-        // Sign WSS URL via our ECS pipeline
-        let sign_res = ecs
-            .sign_douyin_wss(
-                client_ip,
-                DouyinSignWssRequest {
-                    api_key: Some(api_key),
-                    room_id: Some(room.room_id.clone()),
-                    user_unique_id: Some(room.user_unique_id.clone()),
-                    browser_name: None,
-                    browser_version: None,
-                    live_url: Some(room.live_url.clone()),
-                },
-            )
-            .await;
+        let total_received = Arc::new(AtomicU64::new(0));
+        let dropped_messages = Arc::new(AtomicU64::new(0));
+        let stream_ended = Arc::new(AtomicBool::new(false));
 
-        if sign_res.code != 0 {
-            let _ = tx
-                .send(LiveStreamEvent::Error {
-                    timestamp: now_hms(),
-                    message: format!(
-                        "ECS 签名失败 (Code={}): {}",
-                        sign_res.code,
-                        sign_res.msg.unwrap_or_else(|| "未知错误".to_string())
-                    ),
-                })
-                .await;
-            return;
-        }
-
-        let data = match sign_res.data {
-            Some(d) => d,
-            None => {
-                let _ = tx
-                    .send(LiveStreamEvent::Error {
-                        timestamp: now_hms(),
-                        message: "ECS 签名未返回数据".to_string(),
-                    })
-                    .await;
-                return;
-            }
-        };
-
-        let wss_url = data["WssUrl"].as_str().unwrap_or("").to_string();
-        let signature = data["Signature"].as_str().unwrap_or("").to_string();
-
-        let _ = tx
-            .send(LiveStreamEvent::RoomInfo {
-                room: room.clone(),
-                wss_url: wss_url.clone(),
-                signature: signature.clone(),
-            })
-            .await;
-
-        let _ = tx
-            .send(LiveStreamEvent::Status {
-                timestamp: now_hms(),
-                message: format!("签名成功（X-Bogus={signature}），正在建立 WebSocket 推流连接..."),
-            })
-            .await;
-
-        let mut ws_req = match wss_url.as_str().into_client_request() {
-            Ok(r) => r,
-            Err(e) => {
-                let _ = tx
-                    .send(LiveStreamEvent::Error {
-                        timestamp: now_hms(),
-                        message: format!("构造 WebSocket 请求失败: {e}"),
-                    })
-                    .await;
-                return;
-            }
-        };
-
-        if let Ok(v) = BROWSER_UA.parse() {
-            ws_req.headers_mut().insert(USER_AGENT, v);
-        }
-        if let Ok(v) = format!("ttwid={}", room.ttwid).parse() {
-            ws_req.headers_mut().insert(COOKIE, v);
-        }
-        if let Ok(v) = "https://live.douyin.com".parse() {
-            ws_req.headers_mut().insert(ORIGIN, v);
-        }
-
-        let (ws_stream, _) = match tokio_tungstenite::connect_async(ws_req).await {
-            Ok(pair) => pair,
-            Err(e) => {
-                let _ = tx
-                    .send(LiveStreamEvent::Error {
-                        timestamp: now_hms(),
-                        message: format!("WebSocket 握手连接失败: {e}"),
-                    })
-                    .await;
-                return;
-            }
-        };
-
-        info!(room_id = %room.room_id, "Connected to Douyin Webcast WSS push stream");
-        let _ = tx
-            .send(LiveStreamEvent::Status {
-                timestamp: now_hms(),
-                message: "WebSocket 连接已建立！正在实时解码 Protobuf 直播间消息...".to_string(),
-            })
-            .await;
-
-        let (mut ws_sink, mut ws_read) = ws_stream.split();
-        let mut hb_interval = tokio::time::interval(Duration::from_secs(10));
-
-        loop {
-            tokio::select! {
-                _ = tx.closed() => {
-                    info!(room_id = %room.room_id, "SSE client disconnected; closing Douyin WSS");
-                    let _ = ws_sink.close().await;
+        // Dedicated batch-decoder & SSE-feeder task: decouples Protobuf per-message decoding
+        // and SSE HTTP writes from the WebSocket reader/ACK loop so 10k-100k concurrent rooms
+        // never stall ACKs or heartbeats.
+        let (decode_tx, mut decode_rx) = mpsc::channel::<Vec<ProtoMessage>>(DECODE_QUEUE_CAPACITY);
+        let sse_tx_decoder = tx.clone();
+        let total_received_decoder = Arc::clone(&total_received);
+        let dropped_decoder = Arc::clone(&dropped_messages);
+        let stream_ended_decoder = Arc::clone(&stream_ended);
+        let decoder_handle = tokio::spawn(async move {
+            while let Some(raw_messages) = decode_rx.recv().await {
+                if sse_tx_decoder.is_closed() {
                     break;
                 }
-                _ = hb_interval.tick() => {
-                    let hb = encode_heartbeat_frame();
-                    if let Err(e) = ws_sink.send(WsMessage::Binary(hb.into())).await {
-                        warn!(error = %e, "Failed to send WebSocket heartbeat");
-                        break;
-                    }
-                    debug!(room_id = %room.room_id, "Sent Protobuf heartbeat frame");
+                let events = decode_webcast_messages_batch(&raw_messages);
+                if events.is_empty() {
+                    continue;
                 }
-                maybe_msg = ws_read.next() => {
-                    match maybe_msg {
-                        Some(Ok(WsMessage::Binary(bin))) => {
-                            match decode_push_frame(&bin) {
-                                Ok((frame, Some(resp))) => {
-                                    if resp.need_ack {
-                                        let ack = encode_ack_frame(frame.log_id, &resp.internal_ext);
-                                        if let Err(e) = ws_sink.send(WsMessage::Binary(ack.into())).await {
-                                            warn!(error = %e, "Failed to send ACK frame");
-                                        }
+                if events.iter().any(|ev| {
+                    ev.method == "WebcastControlMessage"
+                        && ev
+                            .extra
+                            .as_ref()
+                            .and_then(|x| x.get("status"))
+                            .and_then(|v| v.as_i64())
+                            == Some(3)
+                }) {
+                    stream_ended_decoder.store(true, Ordering::Relaxed);
+                }
+                let received_now = total_received_decoder
+                    .fetch_add(events.len() as u64, Ordering::Relaxed)
+                    + events.len() as u64;
+                let dropped_now = dropped_decoder.load(Ordering::Relaxed);
+
+                if sse_tx_decoder
+                    .send(LiveStreamEvent::LiveMessageBatch {
+                        events,
+                        total_received: received_now,
+                        dropped: dropped_now,
+                    })
+                    .await
+                    .is_err()
+                {
+                    break;
+                }
+            }
+        });
+
+        let mut reconnect_attempts: u32 = 0;
+
+        loop {
+            if tx.is_closed() || stream_ended.load(Ordering::Relaxed) {
+                break;
+            }
+
+            // Sign WSS URL via our ECS pipeline (re-sign on reconnect for a fresh signature)
+            let sign_res = ecs
+                .sign_douyin_wss(
+                    client_ip.clone(),
+                    DouyinSignWssRequest {
+                        api_key: Some(api_key.clone()),
+                        room_id: Some(room.room_id.clone()),
+                        user_unique_id: Some(room.user_unique_id.clone()),
+                        browser_name: None,
+                        browser_version: None,
+                        live_url: Some(room.live_url.clone()),
+                    },
+                )
+                .await;
+
+            if sign_res.code != 0 {
+                let _ = tx
+                    .send(LiveStreamEvent::Error {
+                        timestamp: now_hms(),
+                        message: format!(
+                            "ECS 签名失败 (Code={}): {}",
+                            sign_res.code,
+                            sign_res.msg.unwrap_or_else(|| "未知错误".to_string())
+                        ),
+                    })
+                    .await;
+                break;
+            }
+
+            let data = match sign_res.data {
+                Some(d) => d,
+                None => {
+                    let _ = tx
+                        .send(LiveStreamEvent::Error {
+                            timestamp: now_hms(),
+                            message: "ECS 签名未返回数据".to_string(),
+                        })
+                        .await;
+                    break;
+                }
+            };
+
+            let wss_url = data["WssUrl"].as_str().unwrap_or("").to_string();
+            let signature = data["Signature"].as_str().unwrap_or("").to_string();
+
+            let _ = tx
+                .send(LiveStreamEvent::RoomInfo {
+                    room: room.clone(),
+                    wss_url: wss_url.clone(),
+                    signature: signature.clone(),
+                })
+                .await;
+
+            let _ = tx
+                .send(LiveStreamEvent::Status {
+                    timestamp: now_hms(),
+                    message: if reconnect_attempts == 0 {
+                        format!("签名成功（X-Bogus={signature}），正在建立 WebSocket 推流连接...")
+                    } else {
+                        format!(
+                            "第 {reconnect_attempts} 次重连签名成功（X-Bogus={signature}），正在重新建立 WebSocket..."
+                        )
+                    },
+                })
+                .await;
+
+            let mut ws_req = match wss_url.as_str().into_client_request() {
+                Ok(r) => r,
+                Err(e) => {
+                    let _ = tx
+                        .send(LiveStreamEvent::Error {
+                            timestamp: now_hms(),
+                            message: format!("构造 WebSocket 请求失败: {e}"),
+                        })
+                        .await;
+                    break;
+                }
+            };
+
+            if let Ok(v) = BROWSER_UA.parse() {
+                ws_req.headers_mut().insert(USER_AGENT, v);
+            }
+            if let Ok(v) = format!("ttwid={}", room.ttwid).parse() {
+                ws_req.headers_mut().insert(COOKIE, v);
+            }
+            if let Ok(v) = "https://live.douyin.com".parse() {
+                ws_req.headers_mut().insert(ORIGIN, v);
+            }
+
+            // Generous read/write buffers & TCP_NODELAY (disable_nagle = true) so ACKs flush immediately
+            // in high-concurrency (10k-100k+) rooms without frame truncation or Nagle latency.
+            let ws_config = WebSocketConfig::default()
+                .read_buffer_size(256 * 1024)
+                .write_buffer_size(64 * 1024)
+                .max_message_size(Some(64 * 1024 * 1024))
+                .max_frame_size(Some(16 * 1024 * 1024));
+
+            let (ws_stream, _) =
+                match tokio_tungstenite::connect_async_with_config(ws_req, Some(ws_config), true)
+                    .await
+                {
+                    Ok(pair) => pair,
+                    Err(e) => {
+                        reconnect_attempts += 1;
+                        if reconnect_attempts > MAX_RECONNECT_ATTEMPTS || tx.is_closed() {
+                            let _ = tx
+                                .send(LiveStreamEvent::Error {
+                                    timestamp: now_hms(),
+                                    message: format!("WebSocket 握手连接失败: {e}"),
+                                })
+                                .await;
+                            break;
+                        }
+                        let _ = tx
+                            .send(LiveStreamEvent::Status {
+                                timestamp: now_hms(),
+                                message: format!(
+                                    "WebSocket 握手失败（{e}），2 秒后自动重连 ({reconnect_attempts}/{MAX_RECONNECT_ATTEMPTS})..."
+                                ),
+                            })
+                            .await;
+                        tokio::time::sleep(Duration::from_secs(2)).await;
+                        continue;
+                    }
+                };
+
+            info!(room_id = %room.room_id, "Connected to Douyin Webcast WSS push stream");
+            let _ = tx
+                .send(LiveStreamEvent::Status {
+                    timestamp: now_hms(),
+                    message: "WebSocket 连接已建立！已启用高并发异步 ACK 与批量 Protobuf 解码管线..."
+                        .to_string(),
+                })
+                .await;
+
+            let (mut ws_sink, mut ws_read) = ws_stream.split();
+            let (ws_write_tx, mut ws_write_rx) =
+                mpsc::channel::<WsMessage>(WS_WRITE_QUEUE_CAPACITY);
+            let hb_secs = Arc::new(AtomicU64::new(10));
+            let hb_secs_writer = Arc::clone(&hb_secs);
+            let room_id_writer = room.room_id.clone();
+
+            // Dedicated WebSocket writer task: sends ACKs, Pongs, and periodic Heartbeats
+            // completely independently of reading and SSE downstream I/O.
+            let writer_handle = tokio::spawn(async move {
+                let mut current_hb = hb_secs_writer.load(Ordering::Relaxed).clamp(5, 30);
+                let mut hb_interval = tokio::time::interval(Duration::from_secs(current_hb));
+                hb_interval.set_missed_tick_behavior(MissedTickBehavior::Delay);
+                // Consume immediate first tick so first heartbeat fires after `current_hb` seconds
+                hb_interval.tick().await;
+
+                loop {
+                    tokio::select! {
+                        biased;
+                        maybe_out = ws_write_rx.recv() => {
+                            match maybe_out {
+                                Some(out_msg) => {
+                                    let is_close = matches!(out_msg, WsMessage::Close(_));
+                                    if let Err(e) = ws_sink.send(out_msg).await {
+                                        warn!(room_id = %room_id_writer, error = %e, "Failed to write WebSocket frame");
+                                        break;
                                     }
-                                    for msg in &resp.messages_list {
-                                        let decoded = decode_webcast_message(msg);
-                                        if tx.send(LiveStreamEvent::LiveMessage { event: decoded }).await.is_err() {
-                                            return;
-                                        }
+                                    if is_close {
+                                        break;
                                     }
                                 }
-                                Ok((_, None)) => {}
-                                Err(err) => {
-                                    debug!(error = %err, "Failed to decode PushFrame");
+                                None => {
+                                    let _ = ws_sink.close().await;
+                                    break;
                                 }
                             }
                         }
-                        Some(Ok(WsMessage::Close(frame))) => {
-                            let _ = tx.send(LiveStreamEvent::Status {
-                                timestamp: now_hms(),
-                                message: format!("抖音服务端关闭了 WebSocket 连接: {frame:?}"),
-                            }).await;
-                            break;
+                        _ = hb_interval.tick() => {
+                            let desired = hb_secs_writer.load(Ordering::Relaxed).clamp(5, 30);
+                            if desired != current_hb {
+                                current_hb = desired;
+                                hb_interval = tokio::time::interval(Duration::from_secs(current_hb));
+                                hb_interval.set_missed_tick_behavior(MissedTickBehavior::Delay);
+                                hb_interval.tick().await;
+                            }
+                            let hb = encode_heartbeat_frame();
+                            if let Err(e) = ws_sink.send(WsMessage::Binary(hb.into())).await {
+                                warn!(room_id = %room_id_writer, error = %e, "Failed to send WebSocket heartbeat");
+                                break;
+                            }
+                            debug!(room_id = %room_id_writer, "Sent Protobuf heartbeat frame");
                         }
-                        Some(Ok(_)) => {}
-                        Some(Err(e)) => {
-                            let _ = tx.send(LiveStreamEvent::Error {
-                                timestamp: now_hms(),
-                                message: format!("WebSocket 读取异常: {e}"),
-                            }).await;
-                            break;
-                        }
-                        None => {
-                            let _ = tx.send(LiveStreamEvent::Status {
-                                timestamp: now_hms(),
-                                message: "WebSocket 数据流已结束".to_string(),
-                            }).await;
-                            break;
+                    }
+                }
+            });
+
+            let mut received_any_frame = false;
+            let mut should_reconnect = false;
+
+            loop {
+                tokio::select! {
+                    _ = tx.closed() => {
+                        info!(room_id = %room.room_id, "SSE client disconnected; closing Douyin WSS");
+                        let _ = ws_write_tx.try_send(WsMessage::Close(None));
+                        break;
+                    }
+                    maybe_msg = ws_read.next() => {
+                        match maybe_msg {
+                            Some(Ok(WsMessage::Binary(bin))) => {
+                                match decode_push_frame(&bin) {
+                                    Ok((frame, Some(resp))) => {
+                                        if !received_any_frame {
+                                            received_any_frame = true;
+                                            reconnect_attempts = 0;
+                                        }
+                                        // 1. Immediately enqueue ACK before any message decoding or SSE work
+                                        if resp.need_ack {
+                                            let ack = encode_ack_frame(frame.log_id, &resp.internal_ext);
+                                            if ws_write_tx.try_send(WsMessage::Binary(ack.into())).is_err() {
+                                                warn!(room_id = %room.room_id, "WS write queue full when enqueuing ACK");
+                                            }
+                                        }
+                                        // 2. Adopt server-suggested heartbeat interval if provided
+                                        if resp.heartbeat_duration > 0 {
+                                            let secs = if resp.heartbeat_duration > 1000 {
+                                                resp.heartbeat_duration / 1000
+                                            } else {
+                                                resp.heartbeat_duration
+                                            };
+                                            if (5..=30).contains(&secs) {
+                                                hb_secs.store(secs, Ordering::Relaxed);
+                                            }
+                                        }
+                                        // 3. Hand off entire message batch to the async decoder task (non-blocking)
+                                        if !resp.messages_list.is_empty() {
+                                            let batch_len = resp.messages_list.len() as u64;
+                                            match decode_tx.try_send(resp.messages_list) {
+                                                Ok(()) => {}
+                                                Err(mpsc::error::TrySendError::Full(_)) => {
+                                                    let total_drop = dropped_messages
+                                                        .fetch_add(batch_len, Ordering::Relaxed)
+                                                        + batch_len;
+                                                    warn!(
+                                                        room_id = %room.room_id,
+                                                        batch_len,
+                                                        total_drop,
+                                                        "Decode queue saturated; dropped batch to protect WSS ACK loop"
+                                                    );
+                                                }
+                                                Err(mpsc::error::TrySendError::Closed(_)) => {
+                                                    break;
+                                                }
+                                            }
+                                        }
+                                    }
+                                    Ok((_, None)) => {}
+                                    Err(err) => {
+                                        warn!(room_id = %room.room_id, error = %err, "Failed to decode PushFrame");
+                                    }
+                                }
+                            }
+                            Some(Ok(WsMessage::Ping(payload))) => {
+                                let _ = ws_write_tx.try_send(WsMessage::Pong(payload));
+                            }
+                            Some(Ok(WsMessage::Close(frame))) => {
+                                should_reconnect = !tx.is_closed() && !stream_ended.load(Ordering::Relaxed);
+                                let _ = tx.send(LiveStreamEvent::Status {
+                                    timestamp: now_hms(),
+                                    message: format!("抖音服务端关闭了 WebSocket 连接: {frame:?}"),
+                                }).await;
+                                break;
+                            }
+                            Some(Ok(_)) => {}
+                            Some(Err(e)) => {
+                                should_reconnect = !tx.is_closed() && !stream_ended.load(Ordering::Relaxed);
+                                let _ = tx.send(LiveStreamEvent::Status {
+                                    timestamp: now_hms(),
+                                    message: format!("WebSocket 读取异常: {e}"),
+                                }).await;
+                                break;
+                            }
+                            None => {
+                                should_reconnect = !tx.is_closed() && !stream_ended.load(Ordering::Relaxed);
+                                let _ = tx.send(LiveStreamEvent::Status {
+                                    timestamp: now_hms(),
+                                    message: "WebSocket 数据流已结束".to_string(),
+                                }).await;
+                                break;
+                            }
                         }
                     }
                 }
             }
+
+            drop(ws_write_tx);
+            let _ = writer_handle.await;
+
+            if !should_reconnect {
+                break;
+            }
+
+            reconnect_attempts += 1;
+            if reconnect_attempts > MAX_RECONNECT_ATTEMPTS {
+                let _ = tx
+                    .send(LiveStreamEvent::Error {
+                        timestamp: now_hms(),
+                        message: format!(
+                            "连续重连 {MAX_RECONNECT_ATTEMPTS} 次仍断开，已停止监听（可重新点击连接）"
+                        ),
+                    })
+                    .await;
+                break;
+            }
+
+            let delay_secs = (reconnect_attempts as u64).min(3);
+            let _ = tx
+                .send(LiveStreamEvent::Status {
+                    timestamp: now_hms(),
+                    message: format!(
+                        "连接中断，{delay_secs} 秒后自动重连 ({reconnect_attempts}/{MAX_RECONNECT_ATTEMPTS})..."
+                    ),
+                })
+                .await;
+            tokio::time::sleep(Duration::from_secs(delay_secs)).await;
         }
+
+        drop(decode_tx);
+        let _ = decoder_handle.await;
     });
 }

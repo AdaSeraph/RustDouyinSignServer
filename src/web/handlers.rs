@@ -202,7 +202,7 @@ pub async fn live_stream_sse(
         .filter(|s| !s.trim().is_empty())
         .unwrap_or_else(|| "demo-apikey-learning-only".to_string());
 
-    let (tx, rx) = mpsc::channel::<LiveStreamEvent>(128);
+    let (tx, rx) = mpsc::channel::<LiveStreamEvent>(4096);
     spawn_live_stream_task(
         state.http_client.clone(),
         state.ecs.clone(),

@@ -85,6 +85,25 @@ pub fn encode_heartbeat_frame() -> Vec<u8> {
 /// Decode an individual Protobuf `Message` inside `Response.messages_list`.
 pub fn decode_webcast_message(msg: &Message) -> DecodedLiveEvent {
     let now = Local::now().format("%H:%M:%S").to_string();
+    decode_webcast_message_with_ts(msg, &now)
+}
+
+/// Decode a batch of Protobuf `Message`s sharing one formatted timestamp (avoids repeated clock formatting under high throughput).
+pub fn decode_webcast_messages_batch(messages: &[Message]) -> Vec<DecodedLiveEvent> {
+    if messages.is_empty() {
+        return Vec::new();
+    }
+    let now = Local::now().format("%H:%M:%S").to_string();
+    let mut out = Vec::with_capacity(messages.len());
+    for msg in messages {
+        out.push(decode_webcast_message_with_ts(msg, &now));
+    }
+    out
+}
+
+/// Decode an individual Protobuf `Message` using a pre-formatted timestamp string.
+pub fn decode_webcast_message_with_ts(msg: &Message, timestamp: &str) -> DecodedLiveEvent {
+    let now = timestamp.to_string();
     let method = msg.method.clone();
 
     match method.as_str() {
@@ -379,5 +398,59 @@ mod tests {
         assert_eq!(report.decoded_messages[0].user.as_deref(), Some("Rust学习者"));
         assert_eq!(report.decoded_messages[1].event_type, "gift");
         assert!(report.decoded_messages[1].content.contains("小心心"));
+    }
+
+    #[test]
+    fn test_high_concurrency_batch_decode() {
+        let mut messages_list = Vec::with_capacity(500);
+        for i in 0..500u64 {
+            let chat = ChatMessage {
+                user: Some(User {
+                    id: 10_000 + i,
+                    nick_name: format!("观众{i}"),
+                    ..Default::default()
+                }),
+                content: format!("高并发弹幕 #{i}"),
+                ..Default::default()
+            };
+            messages_list.push(Message {
+                method: "WebcastChatMessage".to_string(),
+                payload: chat.encode_to_vec(),
+                msg_id: i as i64,
+                ..Default::default()
+            });
+        }
+
+        let resp = Response {
+            messages_list,
+            need_ack: true,
+            internal_ext: "batch_ext".to_string(),
+            ..Default::default()
+        };
+
+        let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+        encoder
+            .write_all(&resp.encode_to_vec())
+            .expect("gzip encode");
+        let gz_payload = encoder.finish().expect("gzip finish");
+
+        let frame = PushFrame {
+            seq_id: 42,
+            log_id: 123456,
+            payload_type: "msg".to_string(),
+            headers_list: vec![HeadersList {
+                key: "compress_type".to_string(),
+                value: "gzip".to_string(),
+            }],
+            payload: gz_payload,
+            ..Default::default()
+        };
+
+        let (_, decoded_resp) = decode_push_frame(&frame.encode_to_vec()).expect("decode frame");
+        let resp = decoded_resp.expect("response present");
+        let batch = decode_webcast_messages_batch(&resp.messages_list);
+        assert_eq!(batch.len(), 500);
+        assert_eq!(batch[0].content, "高并发弹幕 #0");
+        assert_eq!(batch[499].content, "高并发弹幕 #499");
     }
 }

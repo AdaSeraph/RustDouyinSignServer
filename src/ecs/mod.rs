@@ -64,7 +64,7 @@ impl EcsHandle {
             name: "KwaiUidToEidService".to_string(),
             route: "/Kwai/UidToEid".to_string(),
             method: "POST".to_string(),
-            description: "快手 UID 转 EID 兼容接口（移植自原 C# KwaiController）".to_string(),
+            description: "快手 UID 转 EID 接口".to_string(),
         });
         world.spawn(ServiceNode {
             name: "EcsInspectorService".to_string(),
