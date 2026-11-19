@@ -5,18 +5,18 @@ pub mod systems;
 use crate::config::ServerConfig;
 use crate::ecs::components::{JsWorkerEntity, ServiceNode};
 use crate::ecs::resources::{
-    ApiKeyRegistry, CommandBatch, EcsCommand, EcsWorldSnapshot, MetricsResource, PendingSnapshots,
-    RequestLogBuffer, SignEngineResource,
+    ApiKeyRegistry, CommandBatch, EcsCommand, EcsWakeResource, EcsWorldSnapshot, MetricsResource,
+    PendingSnapshots, RequestLogBuffer, SignEngineResource,
 };
 use crate::ecs::systems::{
-    cleanup_completed_entities_system, dispatch_response_and_log_system,
-    execute_douyin_sign_system, ingest_commands_system, serve_snapshots_system,
+    cleanup_completed_entities_system, collect_douyin_sign_system, dispatch_douyin_sign_system,
+    dispatch_response_and_log_system, ingest_commands_system, serve_snapshots_system,
     sync_worker_entities_system, validate_auth_system, validate_douyin_payload_system,
 };
 use crate::engine::JsSignEngine;
 use crate::models::{ApiResultModel, DouyinSignWssRequest};
 use bevy_ecs::prelude::*;
-use std::sync::mpsc;
+use std::sync::{Arc, mpsc};
 use std::thread;
 use std::time::Duration;
 use tokio::sync::oneshot;
@@ -38,9 +38,15 @@ impl EcsHandle {
 
         // Insert ECS Resources
         let initial_keys = config.initial_api_keys.clone();
+        let wake_tx = tx.clone();
         world.insert_resource(config);
         world.insert_resource(ApiKeyRegistry::new(initial_keys));
         world.insert_resource(SignEngineResource { engine });
+        world.insert_resource(EcsWakeResource {
+            wake: Arc::new(move || {
+                let _ = wake_tx.send(EcsCommand::Wake);
+            }),
+        });
         world.insert_resource(MetricsResource::default());
         world.insert_resource(RequestLogBuffer::default());
         world.insert_resource(PendingSnapshots::default());
@@ -85,7 +91,7 @@ impl EcsHandle {
             });
         }
 
-        // Build deterministic ECS Schedule pipeline
+        // Build deterministic ECS Schedule pipeline (non-blocking parallel JS VM dispatch)
         let mut schedule = Schedule::default();
         schedule.add_systems(
             (
@@ -94,7 +100,9 @@ impl EcsHandle {
                 validate_auth_system,
                 validate_douyin_payload_system,
                 apply_deferred,
-                execute_douyin_sign_system,
+                dispatch_douyin_sign_system,
+                apply_deferred,
+                collect_douyin_sign_system,
                 apply_deferred,
                 dispatch_response_and_log_system,
                 sync_worker_entities_system,
@@ -288,5 +296,59 @@ mod tests {
         assert_eq!(snap.metrics.success_count, 1);
         assert_eq!(snap.metrics.error_count, 1);
         assert_eq!(snap.recent_logs.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_ecs_parallel_concurrent_signing() {
+        let mut cfg = ServerConfig::default();
+        cfg.log_to_file = false;
+        cfg.js_worker_count = 2;
+
+        let engine = JsSignEngine::new(&cfg.script_path, 2).expect("init engine");
+        let ecs = EcsHandle::spawn(cfg, engine).expect("spawn ecs");
+
+        let mut handles = Vec::new();
+        for i in 0..20 {
+            let ecs_clone = ecs.clone();
+            handles.push(tokio::spawn(async move {
+                ecs_clone
+                    .sign_douyin_wss(
+                        "127.0.0.1".to_string(),
+                        DouyinSignWssRequest {
+                            api_key: Some("demo-apikey-learning-only".to_string()),
+                            room_id: Some(format!("74157919438310469{i:02}")),
+                            user_unique_id: Some("7410618736569206322".to_string()),
+                            browser_name: None,
+                            browser_version: None,
+                            live_url: None,
+                        },
+                    )
+                    .await
+            }));
+        }
+
+        let mut ok_count = 0usize;
+        for h in handles {
+            let res = h.await.expect("task join");
+            assert_eq!(res.code, 0, "expected code 0, got {:?}", res.msg);
+            let data = res.data.expect("data present");
+            let sig = data["Signature"].as_str().expect("Signature present");
+            assert!(!sig.is_empty());
+            assert_ne!(sig, "00000000");
+            ok_count += 1;
+        }
+        assert_eq!(ok_count, 20);
+
+        let snap = ecs.get_snapshot().await.expect("snapshot");
+        assert_eq!(snap.metrics.total_requests, 20);
+        assert_eq!(snap.metrics.success_count, 20);
+        assert_eq!(snap.metrics.error_count, 0);
+        // Verify both workers actually shared the parallel load
+        let active_workers = snap
+            .worker_entities
+            .iter()
+            .filter(|w| w.tasks_completed > 0)
+            .count();
+        assert_eq!(active_workers, 2, "expected both workers to process jobs in parallel");
     }
 }

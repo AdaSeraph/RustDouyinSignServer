@@ -1,12 +1,12 @@
 use crate::config::ServerConfig;
 use crate::ecs::components::{
-    ApiKeyAuth, CompletedTag, ComputedStub, DouyinSignPayload, JsWorkerEntity, RequestMeta,
-    ResponseChannel, ServiceNode, SignResult, ValidationState,
+    ApiKeyAuth, CompletedTag, ComputedStub, DouyinSignPayload, JsWorkerEntity, PendingSignJob,
+    RequestMeta, ResponseChannel, ServiceNode, SignResult, ValidationState,
 };
 use crate::ecs::resources::{
-    ApiKeyRegistry, CommandBatch, EcsCommand, EcsWorldSnapshot, MetricsResource, MetricsSnapshot,
-    PendingSnapshots, RequestLogBuffer, RequestLogEntry, SignEngineResource, SystemStageInfo,
-    mask_api_key,
+    ApiKeyRegistry, CommandBatch, EcsCommand, EcsWakeResource, EcsWorldSnapshot, MetricsResource,
+    MetricsSnapshot, PendingSnapshots, RequestLogBuffer, RequestLogEntry, SignEngineResource,
+    SystemStageInfo, mask_api_key,
 };
 use crate::engine::{build_sign_params, build_wss_url, md5_hex};
 use crate::models::{ApiResultModel, DouyinSignWssData};
@@ -16,7 +16,9 @@ use rand::Rng;
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::Path;
+use std::sync::Arc;
 use std::time::Instant;
+use tokio::sync::oneshot::error::TryRecvError;
 use tracing::{error, info};
 use uuid::Uuid;
 
@@ -143,6 +145,7 @@ pub fn ingest_commands_system(
             EcsCommand::GetSnapshot { reply } => {
                 pending_snapshots.waiters.push(reply);
             }
+            EcsCommand::Wake => {}
         }
     }
 }
@@ -227,27 +230,59 @@ pub fn validate_douyin_payload_system(
     }
 }
 
-/// Stage 4: Execute JS frontier signing for validated Douyin Request Entities.
-pub fn execute_douyin_sign_system(
+/// Stage 4a: Non-blocking dispatch of validated Douyin Request Entities to the Boa JS VM worker pool.
+pub fn dispatch_douyin_sign_system(
     mut commands: Commands,
     sign_engine: Res<SignEngineResource>,
+    wake: Res<EcsWakeResource>,
     mut query: Query<
+        (Entity, &ComputedStub, &mut ValidationState),
         (
-            Entity,
-            &DouyinSignPayload,
-            &ComputedStub,
-            &mut ValidationState,
+            Without<PendingSignJob>,
+            Without<SignResult>,
+            Without<CompletedTag>,
         ),
-        (Without<SignResult>, Without<CompletedTag>),
     >,
 ) {
-    for (entity, payload, stub, mut state) in &mut query {
+    for (entity, stub, mut state) in &mut query {
         if !matches!(*state, ValidationState::Validated) {
             continue;
         }
 
-        match sign_engine.engine.sign_stub_blocking(stub.md5_hex.clone()) {
-            Ok(signature) => {
+        match sign_engine
+            .engine
+            .submit_sign_stub(stub.md5_hex.clone(), Some(Arc::clone(&wake.wake)))
+        {
+            Ok(rx) => {
+                commands.entity(entity).insert(PendingSignJob(rx));
+            }
+            Err(err) => {
+                error!(error = %err, "Failed to dispatch JS frontier signing job");
+                *state = ValidationState::Rejected {
+                    code: 500,
+                    reason: format!("接口访问内部错误: {err}"),
+                };
+            }
+        }
+    }
+}
+
+/// Stage 4b: Non-blocking collection of completed JS frontier signing results from worker threads.
+pub fn collect_douyin_sign_system(
+    mut commands: Commands,
+    mut query: Query<
+        (
+            Entity,
+            &DouyinSignPayload,
+            &mut ValidationState,
+            &mut PendingSignJob,
+        ),
+        (Without<SignResult>, Without<CompletedTag>),
+    >,
+) {
+    for (entity, payload, mut state, mut pending) in &mut query {
+        match pending.0.try_recv() {
+            Ok(Ok(signature)) => {
                 let wss_url = build_wss_url(
                     &payload.room_id,
                     &payload.user_unique_id,
@@ -255,14 +290,29 @@ pub fn execute_douyin_sign_system(
                     &payload.browser_version,
                     &signature,
                 );
-                commands.entity(entity).insert(SignResult { signature, wss_url });
+                commands
+                    .entity(entity)
+                    .remove::<PendingSignJob>()
+                    .insert(SignResult { signature, wss_url });
             }
-            Err(err) => {
+            Ok(Err(err)) => {
                 error!(error = %err, "JS frontier signing failed");
                 *state = ValidationState::Rejected {
                     code: 500,
                     reason: format!("接口访问内部错误: {err}"),
                 };
+                commands.entity(entity).remove::<PendingSignJob>();
+            }
+            Err(TryRecvError::Closed) => {
+                error!("JS frontier signing worker dropped response");
+                *state = ValidationState::Rejected {
+                    code: 500,
+                    reason: "接口访问内部错误: Sign worker dropped response".to_string(),
+                };
+                commands.entity(entity).remove::<PendingSignJob>();
+            }
+            Err(TryRecvError::Empty) => {
+                // Still signing in parallel on a worker thread; keep entity in-flight.
             }
         }
     }
@@ -286,7 +336,7 @@ pub fn dispatch_response_and_log_system(
             Option<&SignResult>,
             &mut ResponseChannel,
         ),
-        Without<CompletedTag>,
+        (Without<CompletedTag>, Without<PendingSignJob>),
     >,
 ) {
     for (entity, meta, auth, payload, state, stub, sign_result, mut channel) in &mut query {
@@ -468,30 +518,36 @@ pub fn serve_snapshots_system(
             },
             SystemStageInfo {
                 order: 4,
-                name: "execute_douyin_sign_system",
-                role: "调用 Boa JS VM 执行 webmssdk.vm.js 签名并拼装 WSS",
-                components: "DouyinSignPayload, ComputedStub -> SignResult",
+                name: "dispatch_douyin_sign_system",
+                role: "非阻塞并发派发签名任务到 Boa JS VM 多线程池",
+                components: "ComputedStub -> PendingSignJob",
             },
             SystemStageInfo {
                 order: 5,
+                name: "collect_douyin_sign_system",
+                role: "非阻塞回收已完成的 Boa JS VM 签名结果并拼装 WSS",
+                components: "PendingSignJob, DouyinSignPayload -> SignResult",
+            },
+            SystemStageInfo {
+                order: 6,
                 name: "dispatch_response_and_log_system",
                 role: "回传 HTTP 响应、更新 MetricsResource 与请求日志",
                 components: "ResponseChannel, SignResult -> CompletedTag",
             },
             SystemStageInfo {
-                order: 6,
+                order: 7,
                 name: "sync_worker_entities_system",
                 role: "同步常驻 JS VM Worker Entity 状态",
                 components: "JsWorkerEntity",
             },
             SystemStageInfo {
-                order: 7,
+                order: 8,
                 name: "cleanup_completed_entities_system",
                 role: "回收已完成的 Request Entity 并更新 Tick 计数",
                 components: "CompletedTag (Despawn)",
             },
             SystemStageInfo {
-                order: 8,
+                order: 9,
                 name: "serve_snapshots_system",
                 role: "导出 ECS World 实时快照供 GUI 监控面板展示",
                 components: "ServiceNode, JsWorkerEntity, Resources",

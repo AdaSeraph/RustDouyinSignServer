@@ -5,6 +5,7 @@ use crate::models::{ApiResultModel, DouyinSignWssRequest};
 use bevy_ecs::prelude::Resource;
 use serde::Serialize;
 use std::collections::{HashSet, VecDeque};
+use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::oneshot;
 
@@ -32,6 +33,13 @@ impl ApiKeyRegistry {
 #[derive(Resource)]
 pub struct SignEngineResource {
     pub engine: JsSignEngine,
+}
+
+/// ECS Resource providing a thread-safe callback to wake the ECS runner immediately
+/// when a background JS VM worker finishes signing a job.
+#[derive(Resource, Clone)]
+pub struct EcsWakeResource {
+    pub wake: Arc<dyn Fn() + Send + Sync>,
 }
 
 /// ECS Resource tracking server & ECS pipeline metrics.
@@ -137,6 +145,8 @@ pub enum EcsCommand {
     GetSnapshot {
         reply: oneshot::Sender<EcsWorldSnapshot>,
     },
+    /// Lightweight notification sent by a JS VM worker when a sign job completes.
+    Wake,
 }
 
 /// Staging buffer populated by the ECS runner before `schedule.run(&mut world)`.

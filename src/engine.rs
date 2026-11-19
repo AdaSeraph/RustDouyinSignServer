@@ -75,6 +75,7 @@ pub struct WorkerSnapshot {
 struct SignJob {
     md5_stub: String,
     reply: oneshot::Sender<Result<String, String>>,
+    on_done: Option<Arc<dyn Fn() + Send + Sync>>,
 }
 
 struct WorkerStats {
@@ -140,6 +141,45 @@ impl JsSignEngine {
                     let _ = context.eval(Source::from_bytes(console_shim.as_bytes()));
                     match context.eval(Source::from_bytes(script_clone.as_bytes())) {
                         Ok(_) => {
+                            // Compatibility shim for persistent VM reuse:
+                            // `webmssdk.vm.js` uses singleton mock DOM elements, and `frontierSign`
+                            // calls `Object.defineProperty(elem, "id", ...)` without `configurable: true`,
+                            // which throws `TypeError: cannot redefine property: id` on the 2nd call.
+                            // Also cap `catvm.memory.htmlelements_objs` to prevent unbounded growth.
+                            let reuse_shim = r#"
+                                (function () {
+                                    if (typeof Object.defineProperty === 'function') {
+                                        var origDefineProperty = Object.defineProperty;
+                                        Object.defineProperty = function (obj, prop, desc) {
+                                            if (prop === 'id' && desc && typeof desc === 'object' && desc.configurable !== true) {
+                                                var patched = Object.assign({}, desc, { configurable: true });
+                                                return origDefineProperty.call(Object, obj, prop, patched);
+                                            }
+                                            return origDefineProperty.call(Object, obj, prop, desc);
+                                        };
+                                    }
+                                    if (typeof catvm !== 'undefined' && catvm.memory && catvm.memory.htmlelements_objs) {
+                                        var origCreate = catvm.memory.variable
+                                            && catvm.memory.variable.Document
+                                            && catvm.memory.variable.Document.__function_createElement;
+                                        if (typeof origCreate === 'function') {
+                                            catvm.memory.variable.Document.__function_createElement = function createElement(tagName) {
+                                                var res = origCreate.call(this, tagName);
+                                                var key = String(tagName).toLowerCase();
+                                                var arr = catvm.memory.htmlelements_objs[key];
+                                                if (arr && arr.length > 16) {
+                                                    arr.length = 0;
+                                                }
+                                                return res;
+                                            };
+                                        }
+                                    }
+                                })();
+                            "#;
+                            if let Err(err) = context.eval(Source::from_bytes(reuse_shim.as_bytes())) {
+                                warn!(worker_id, error = %err, "Failed to install VM reuse compatibility shim");
+                            }
+
                             if let Ok(mut s) = stats_clone.status.lock() {
                                 *s = "ready".to_string();
                             }
@@ -208,6 +248,9 @@ impl JsSignEngine {
                         }
 
                         let _ = job.reply.send(result);
+                        if let Some(on_done) = job.on_done {
+                            on_done();
+                        }
                     }
                 })
                 .map_err(|e| format!("Failed to spawn JS worker thread: {e}"))?;
@@ -224,15 +267,28 @@ impl JsSignEngine {
         })
     }
 
-    /// Synchronously sign an MD5 stub using the worker pool (blocking wait on oneshot).
-    pub fn sign_stub_blocking(&self, md5_stub: String) -> Result<String, String> {
+    /// Submit an MD5 stub to the worker pool without blocking the caller.
+    /// The optional `on_done` callback is invoked right after the worker sends its result.
+    pub fn submit_sign_stub(
+        &self,
+        md5_stub: String,
+        on_done: Option<Arc<dyn Fn() + Send + Sync>>,
+    ) -> Result<oneshot::Receiver<Result<String, String>>, String> {
         let (tx, rx) = oneshot::channel();
         self.sender
             .send(SignJob {
                 md5_stub,
                 reply: tx,
+                on_done,
             })
             .map_err(|e| format!("Sign engine queue unavailable: {e}"))?;
+        Ok(rx)
+    }
+
+    /// Synchronously sign an MD5 stub using the worker pool (blocking wait on oneshot).
+    #[allow(dead_code)]
+    pub fn sign_stub_blocking(&self, md5_stub: String) -> Result<String, String> {
+        let rx = self.submit_sign_stub(md5_stub, None)?;
         rx.blocking_recv()
             .map_err(|e| format!("Sign worker dropped response: {e}"))?
     }
@@ -270,11 +326,14 @@ mod tests {
 
         let engine = JsSignEngine::new("scripts/webmssdk.vm.js", 1)
             .expect("Boa engine should initialize webmssdk.vm.js");
-        let sig = engine
-            .sign_stub_blocking(stub)
-            .expect("frontierSign should succeed");
-        println!("Generated signature: {sig}");
-        assert!(!sig.is_empty());
-        assert_ne!(sig, "00000000");
+        for i in 0..10 {
+            let p = build_sign_params(&format!("74157919438310469{i:02}"), "7410618736569206322");
+            let s = md5_hex(&p);
+            let sig = engine
+                .sign_stub_blocking(s)
+                .unwrap_or_else(|e| panic!("frontierSign call #{i} failed: {e}"));
+            assert!(!sig.is_empty());
+            assert_ne!(sig, "00000000");
+        }
     }
 }

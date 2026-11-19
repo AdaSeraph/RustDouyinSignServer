@@ -47,7 +47,11 @@ pub struct ComputedStub {
     pub md5_hex: String,
 }
 
-/// Final signing output component produced by `execute_douyin_sign_system`.
+/// In-flight signing job dispatched to the Boa JS VM worker pool.
+#[derive(Component)]
+pub struct PendingSignJob(pub oneshot::Receiver<Result<String, String>>);
+
+/// Final signing output component produced by `collect_douyin_sign_system`.
 #[derive(Component, Debug, Clone)]
 pub struct SignResult {
     pub signature: String,
