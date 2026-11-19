@@ -19,7 +19,7 @@
 
 - **纯 Rust 现代技术栈**：`Rust 2024` + `tokio` + `axum 0.8` + `bevy_ecs 0.15` + `boa_engine 0.20`
 - **真正的 ECS 架构**：使用 `bevy_ecs` 驱动整个请求生命周期，每个签名请求以 Entity 进入 World，依次流经 8 个确定性 System 管线阶段
-- **常驻 JS VM Worker 池**：使用纯 Rust 的 `boa_engine` 加载 `scripts/webmssdk.vm.js`，无需 V8/C++ 原生动态库，跨平台开箱即用；相比原 C# 每次请求重建 `V8ScriptEngine`，Rust 版本在启动时预热常驻 VM 池，大幅降低签名延迟
+- **常驻 JS VM Worker 池**：使用纯 Rust 的 `boa_engine` 加载 `scripts/webmssdk.vm.js`，无需 V8/C++ 原生动态库，跨平台开箱即用；Rust 版本在启动时预热常驻 VM 池，大幅降低签名延迟
 - **内置完整 Web GUI 测试台（`GET /`）**：
   - 抖音 WSS 签名交互式测试 + cURL / PowerShell / Fetch 代码生成
   - 并发压测工具（支持自定义总请求数与并发度，实时计算 QPS 与最小/平均/最大延迟）
@@ -109,13 +109,13 @@ cp config.example.toml config.toml
 | --- | --- | --- | --- |
 | `SIGN_CONFIG_PATH` | - | `config.toml` | 自定义 TOML 配置文件路径 |
 | `SIGN_SERVER_HOST` | `[server].host` | `0.0.0.0` | 监听地址 |
-| `SIGN_SERVER_PORT` | `[server].port` | `5289` | 监听端口（与原 C# 默认端口一致） |
+| `SIGN_SERVER_PORT` | `[server].port` | `5289` | 监听端口 |
 | `SIGN_SCRIPT_PATH` | `[server].script_path` | `scripts/webmssdk.vm.js` | 签名脚本路径 |
 | `JS_WORKER_COUNT` | `[server].js_worker_count` | `2` | 常驻 Boa JS VM 工作线程数量 |
 | `SIGN_API_KEYS` | `[auth].api_keys` | `demo-apikey-learning-only,...` | 逗号分隔的初始合法 API Key 列表 |
 | `SIGN_LOG_TO_FILE` | `[logging].log_to_file` | `true` | 是否写入每日日志文件 `logs/logs_YYYYMMDD.txt` |
 | `SIGN_LOG_DIR` | `[logging].log_dir` | `logs` | 日志输出目录 |
-| `SIMULATE_TEST_KEY_BUSY` | `[auth].simulate_test_key_busy` | `false` | 是否模拟原 C# 测试 Key 的随机繁忙拦截 |
+| `SIMULATE_TEST_KEY_BUSY` | `[auth].simulate_test_key_busy` | `false` | 是否模拟测试 Key 的随机繁忙拦截 |
 | `KWAI_SIGN_ENDPOINT` | `[kwai].sign_endpoint` | 空 | 快手签名服务地址 |
 | `KWAI_API_KEY` | `[kwai].api_key` | 空 | 快手签名服务 ApiKey |
 | `KWAI_DEFAULT_TOKEN` | `[kwai].default_token` | 空 | 快手接口默认 Cookie Token |
@@ -196,7 +196,7 @@ DouyinSignServerRust/
 └── src/
     ├── main.rs                 # 启动入口与 Axum 服务装配
     ├── config.rs               # TOML + 环境变量配置加载（ServerConfig Resource）
-    ├── models.rs               # 兼容原 C# 的请求/响应 DTO
+    ├── models.rs               # 请求/响应 DTO
     ├── engine.rs               # Boa JS VM 常驻工作线程池与 MD5/WSS 拼装
     ├── proto.rs                # Protobuf 生成代码挂载、Gzip 解压与弹幕/礼物消息解码器
     ├── live.rs                 # 直播间地址解析、WSS 握手、心跳/ACK 与 SSE 实时反馈
